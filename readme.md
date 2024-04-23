@@ -10,7 +10,7 @@
 - [PPO](https://github.com/uvipen/Super-mario-bros-PPO-pytorch): 该作者通过修改奖励函数以及调参，通过了总共31/32关。
 - [Duel-DQN](https://github.com/jiseongHAN/Super-Mario-RL): 该作者仅跑了有限的几个关卡。
 
-尽管还可以尝试Rainbow及其组成部分，但这没必要。
+尽管还可以尝试Rainbow及其组成部分，但这没必要(当然有时间可以试试)
 
 ## 待复现内容
 接下来计划复现以下更先进的算法：
