@@ -68,8 +68,8 @@ def train_online(RL_agent, env, args):
                 writer.add_scalar('value_loss', value_loss, global_step=rounds)
                 RL_agent.replaybuffer.flagtoFalse()
                 evals = []
-                # if args.checkpoint:
-                #     maybe_evaluate_and_print(RL_agent, eval_env, evals, t, start_time, args)
+                if args.checkpoint:
+                    maybe_evaluate_and_print(RL_agent, eval_env, evals, t, start_time, args)
                 break
                 
                 
@@ -115,7 +115,7 @@ def maybe_evaluate_and_print(RL_agent, eval_env, evals, t, start_time, args, d4r
                 next_state, reward, done, _, _ = eval_env.step(action)
                 total_reward[ep] += reward
                 state = next_state
-
+            print(total_reward[ep])
         print(f"Average total reward over {args.eval_eps} episodes: {total_reward.mean():.3f}")
         if d4rl:
             total_reward = eval_env.get_normalized_score(total_reward) * 100
@@ -138,7 +138,7 @@ def maybe_evaluate_and_print(RL_agent, eval_env, evals, t, start_time, args, d4r
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     # RL
-    parser.add_argument("--env", default="SuperMarioBros-1-1-v0", type=str)
+    parser.add_argument("--env", default="SuperMarioBros-8-4-v0", type=str)
     parser.add_argument("--seed", default=0, type=int)
     parser.add_argument("--test", default=False, action=argparse.BooleanOptionalAction)
 

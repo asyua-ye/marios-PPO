@@ -2,7 +2,7 @@ import numpy as np
 import gymnasium as gym
 import cv2
 cv2.ocl.setUseOpenCL(False)
-from joypad_space import myJoypadSpace
+from utils.joypad_space import myJoypadSpace
 from gymnasium.spaces import Box
 from gymnasium.wrappers import LazyFrames
 
@@ -45,7 +45,7 @@ def Reward(info,reward,old_info,done):
     
     reward += (h + s + p + x)
         
-    return reward   
+    return reward          
 
 
 

@@ -14,23 +14,14 @@ from subproc_vec_env import SubprocVecEnv
 
 
 """
-多进程版本，同时给所有强化学习任务提供了个框架
-
-在windows上，使用spawn，需要在每个子进程中单独初始化
-env = gym_super_mario_bros.make(args.env, render_mode='human', apply_api_compatibility=True)
-在每个子进程单独初始化了，虽然很丑，但是可以跑了
+异步采样
 
 
+一个经典的生产者消费者的问题，actor不停的生产，learner不停的消费
+最理想的情况是，两个角色都自己干自己的，几乎不停。
 
-在linux，使用fork，方便一些，子进程可以直接在父进程中读取NES模拟器的内容
-但是在实际运行中，会有很多奇怪的问题
-
-
-也就是说，我想在windows中调试，需要改下代码，但是在linux中不需要
-
-最终还是选择的spawn，主要fork会出现很多奇怪的问题，spawn只需要在子进程创建，然后就没问题了
-
-同样的超参数，在linux和windows上居然训练的结果完全不一样...
+actor,会描述自己的采样，每次读取新的模型参数(读取200次就结束采样)，有个提示
+learner，就闷头训练就可以了
 
 """
 
@@ -38,7 +29,7 @@ env = gym_super_mario_bros.make(args.env, render_mode='human', apply_api_compati
 class Hyperparameters:
     # Generic
     buffer_size: int = 1
-    discount: float = 0.6
+    discount: float = 0.65
     gae: float = 0.2
     grad: float = 0.5
     num_processes: int = 8
@@ -232,9 +223,9 @@ if __name__ == "__main__":
     
     args = parser.parse_args()
     
+
     
-    
-    
+        
     if args.file_name is None:
         args.file_name = f"{args.env}"
 
@@ -268,7 +259,6 @@ if __name__ == "__main__":
     np.random.seed(args.seed)
     
     
-    
     hp = Hyperparameters(
         env=args.env,
         seed=args.seed,
@@ -279,6 +269,7 @@ if __name__ == "__main__":
         eval=args.eval,
         file_name=args.file_name
     )
+    
     state_dim = env.observation_space.shape
     action_dim = env.action_space.shape[0]
     max_action = float(env.action_space.high[0])

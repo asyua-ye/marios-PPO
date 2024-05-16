@@ -11,8 +11,8 @@ from dataclasses import dataclass
 class Hyperparameters:
     # Generic
     buffer_size: int = int(10240)
-    discount: float = 0.6
-    gae: float = 0.1
+    discount: float = 0.9
+    gae: float = 1.0
     grad: float = 0.5
     
     
@@ -195,7 +195,7 @@ class agent(object):
         self.num_mini_batch = hp.mini_batch
         self.entropy = hp.entropy
         self.value = hp.value
-        self.actor = hp.actor
+        self.actor_w = hp.actor
         
         #checkpoint
         self.Maxscore = 0
@@ -211,12 +211,13 @@ class agent(object):
         logits,value = self.actorCritic(state)
         
         if self.test:
-            dist = torch.distributions.Categorical(logits=logits)
-            log_probs = F.log_softmax(logits, dim=1)
+            logits = torch.where(logits > 0, logits + 1, logits.exp())
+            probs = logits / logits.sum(dim=1, keepdim=True)
+            dist = torch.distributions.Categorical(probs=probs)
             action = dist.sample().view(-1, 1)
-            action_log_probs = log_probs.gather(1, action.long())
+            action_log_probs = dist.log_prob(action.squeeze(-1)).view(-1, 1)
             action = action.cpu().data.numpy()[0][0]
-            return action,0,1
+            return action,action_log_probs.view(-1).cpu().data.numpy(),value.view(-1).cpu().data.numpy()
         else:
             
             """
@@ -228,11 +229,13 @@ class agent(object):
             全是正的时候不会出问题
             
             
-            """            
-            dist = torch.distributions.Categorical(logits=logits)
-            log_probs = F.log_softmax(logits, dim=1)
+            """
+            
+            logits = torch.where(logits > 0, logits + 1, logits.exp())
+            probs = logits / logits.sum(dim=1, keepdim=True)
+            dist = torch.distributions.Categorical(probs=probs)
             action = dist.sample().view(-1, 1)
-            action_log_probs = log_probs.gather(1, action.long())
+            action_log_probs = dist.log_prob(action.squeeze(-1)).view(-1, 1)
             action = action.cpu().data.numpy()[0][0]
             
                 
@@ -243,7 +246,7 @@ class agent(object):
     def get_value(self,state):
         
         state = torch.FloatTensor(state.reshape(-1, *state.shape)).to(self.device)
-        # values = self.critic(state)
+        # value = self.critic(state)
         logits,value = self.actorCritic(state)
         
         
@@ -257,10 +260,10 @@ class agent(object):
         # values = self.critic(state)
         logits,values = self.actorCritic(state)
         
-        dist = torch.distributions.Categorical(logits=logits)
-        log_probs = F.log_softmax(logits, dim=1)
-        
-        action_log_probs = log_probs.gather(1, actions.long())
+        logits = torch.where(logits > 0, logits + 1, logits.exp())
+        probs = logits / logits.sum(dim=1, keepdim=True)
+        dist = torch.distributions.Categorical(probs=probs)
+        action_log_probs = dist.log_prob(actions.squeeze(-1)).view(-1, 1)
         dist_entropy = dist.entropy().mean()
         
         
@@ -289,15 +292,17 @@ class agent(object):
                 
                 
                 value_loss = F.mse_loss(returns, values)
-                actor_loss = self.actor * actor_loss - self.entropy * dist_entropy
+                actor_loss = self.actor_w * actor_loss - self.entropy * dist_entropy
                 loss = actor_loss + self.value * value_loss
                 
                 # self.actor_o.zero_grad()
                 # actor_loss.backward()
+                # torch.nn.utils.clip_grad_norm_(self.actor.parameters(), self.grad)
                 # self.actor_o.step()
                 
                 # self.critic_o.zero_grad()
                 # value_loss.backward()
+                # torch.nn.utils.clip_grad_norm_(self.critic.parameters(), self.grad)
                 # self.critic_o.step()
                 
                 self.actorCritic_o.zero_grad()

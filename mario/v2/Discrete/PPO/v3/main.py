@@ -2,6 +2,7 @@ import numpy as np
 import torch
 import gymnasium as gym
 import gym_super_mario_bros
+import gym_super_mario_bros.actions
 import argparse
 import os
 import time
@@ -31,59 +32,56 @@ DQN或者AC的方法应用到这里，都有个问题：
 
 
 def train_online(RL_agent, env, args):
-    
+    def handle_episode_finish(ep_num, t, rounds, ep_timesteps, ep_total_reward):
+        print(f"T: {t} Total T: {rounds+1} Episode Num: {ep_num} Episode T: {ep_timesteps} Reward: {ep_total_reward:.3f}")
+        writer.add_scalar('round_reward', ep_total_reward, global_step=rounds)
+        state, done = env.reset(), False
+        state = state[0]
+        hidden = (np.zeros((512), dtype=np.float32), np.zeros((512), dtype=np.float32))
+        return state, 0, 0, ep_num + 1, False, hidden
+
     state, ep_finished = env.reset(), False
     state = state[0]
     ep_total_reward, ep_timesteps, ep_num = 0, 0, 1
     rounds = 0
+    hidden = (np.zeros((512), dtype=np.float32), np.zeros((512), dtype=np.float32))
     start_time = time.time()
-    
+
     writer = SummaryWriter(f'./{args.file_name}/results/{datetime.datetime.now().strftime("%Y-%m-%dT%H-%M-%S")}-PPO-{args.max_timesteps}')
-    
+
     for t in range(int(args.max_timesteps+1)):
         flag = False
         while True:
             rounds += 1
-            action,logit,value = RL_agent.select_action(np.array(state))
-            next_state, reward, ep_finished, _, _ = env.step(action) 
-            
+            action, logit, value, hidden = RL_agent.select_action(np.array(state),hidden)
+            next_state, reward, ep_finished, _, _ = env.step(action)
+
             ep_total_reward += reward
             ep_timesteps += 1
 
             done = float(ep_finished)
-            
+
             if flag:
-                if ep_finished: 
-                    print(f"T: {t} Total T: {rounds+1} Episode Num: {ep_num} Episode T: {ep_timesteps} Reward: {ep_total_reward:.3f}")
-                    writer.add_scalar('round_reward', ep_total_reward, global_step=rounds)
-                    state, done = env.reset(), False
-                    state = state[0]
-                    ep_total_reward, ep_timesteps = 0, 0
-                    ep_num += 1
-                next_value = RL_agent.get_value(np.array(next_state))
-                RL_agent.replaybuffer.computeReturn(next_value,done)
+                if ep_finished:
+                    state, ep_total_reward, ep_timesteps, ep_num, done, hidden = handle_episode_finish(ep_num, t, rounds, ep_timesteps, ep_total_reward)
+                next_value = RL_agent.get_value(np.array(next_state),hidden)
+                RL_agent.replaybuffer.computeReturn(next_value, done)
                 print(f"T: {t} Total T: {rounds+1}  begintrain！！")
-                actor_loss,value_loss = RL_agent.train()
+                actor_loss, value_loss = RL_agent.train()
                 writer.add_scalar('actor_loss', actor_loss, global_step=rounds)
                 writer.add_scalar('value_loss', value_loss, global_step=rounds)
                 RL_agent.replaybuffer.flagtoFalse()
                 evals = []
-                # if args.checkpoint:
-                #     maybe_evaluate_and_print(RL_agent, eval_env, evals, t, start_time, args)
+                if args.checkpoint:
+                    maybe_evaluate_and_print(RL_agent, eval_env, evals, t, start_time, args)
                 break
-                
-                
-            flag = RL_agent.replaybuffer.add(state, action, value, reward, done, logit)
-            
+
+            flag = RL_agent.replaybuffer.add(state, action, value, reward, done, logit, hidden)
+
             state = next_state
             
-            if ep_finished: 
-                print(f"T: {t} Total T: {rounds+1} Episode Num: {ep_num} Episode T: {ep_timesteps} Reward: {ep_total_reward:.3f}")
-                writer.add_scalar('round_reward', ep_total_reward, global_step=rounds)
-                state, done = env.reset(), False
-                state = state[0]
-                ep_total_reward, ep_timesteps = 0, 0
-                ep_num += 1 
+            if ep_finished:
+                state, ep_total_reward, ep_timesteps, ep_num, done, hidden = handle_episode_finish(ep_num, t, rounds, ep_timesteps, ep_total_reward)
             
             
 def toTest(RL_agent, env, eval_env, args):
@@ -95,10 +93,7 @@ def toTest(RL_agent, env, eval_env, args):
         maybe_evaluate_and_print(RL_agent, eval_env, evals, t, start_time, args)
     
     
-    
-    
-    
-            
+
             
 def maybe_evaluate_and_print(RL_agent, eval_env, evals, t, start_time, args, d4rl=False):
     if args.checkpoint or args.test:
@@ -110,8 +105,11 @@ def maybe_evaluate_and_print(RL_agent, eval_env, evals, t, start_time, args, d4r
         for ep in range(args.eval_eps):
             state, done = eval_env.reset(), False
             state = state[0]
+            hidden = (np.zeros((512), dtype=np.float32), np.zeros((512), dtype=np.float32))
             while not done:
-                action,_,_ = RL_agent.select_action(np.array(state))
+                action,_,_,_ = RL_agent.select_action(np.array(state),hidden)
+                if args.test:
+                    action = RL_agent.select_action(np.array(state),hidden)
                 next_state, reward, done, _, _ = eval_env.step(action)
                 total_reward[ep] += reward
                 state = next_state
@@ -123,7 +121,7 @@ def maybe_evaluate_and_print(RL_agent, eval_env, evals, t, start_time, args, d4r
         evals.append(total_reward)
         
         if args.checkpoint and not args.test:
-            np.save(f"./{args.file_name}/checkpoint/{args.file_name}", evals)
+            np.save(f"./checkpoint/{args.file_name}", evals)
             score = np.mean(total_reward) + np.min(total_reward) + np.max(total_reward) + np.median(total_reward) - np.std(total_reward)
             flag = RL_agent.IsCheckpoint(score)
             print(f"This Score：{score} Max Score:{RL_agent.Maxscore}")
@@ -138,13 +136,13 @@ def maybe_evaluate_and_print(RL_agent, eval_env, evals, t, start_time, args, d4r
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     # RL
-    parser.add_argument("--env", default="SuperMarioBros-1-1-v0", type=str)
+    parser.add_argument("--env", default="SuperMarioBros-v0", type=str)
     parser.add_argument("--seed", default=0, type=int)
     parser.add_argument("--test", default=False, action=argparse.BooleanOptionalAction)
 
     # Evaluation
     parser.add_argument("--checkpoint", default=True, action=argparse.BooleanOptionalAction)
-    parser.add_argument("--eval_eps", default=7, type=int)
+    parser.add_argument("--eval_eps", default=5, type=int)
     parser.add_argument("--max_timesteps", default=200, type=int)
     parser.add_argument("--eval",default=1,type=int)
     # File
@@ -167,14 +165,13 @@ if __name__ == "__main__":
     if args.checkpoint and not os.path.exists(f"./{args.file_name}/checkpoint"):
         os.makedirs(f"./{args.file_name}/checkpoint/models")
         
-
     
     if gym.__version__ < '0.26':
         env = gym_super_mario_bros.make(args.env, new_step_api=True)
         eval_env = gym_super_mario_bros.make(args.env, new_step_api=True)
     else:
-        env = gym_super_mario_bros.make(args.env, render_mode='human', apply_api_compatibility=True)
-        eval_env = gym_super_mario_bros.make(args.env, render_mode='human', apply_api_compatibility=True)
+        env = gym_super_mario_bros.make(args.env, apply_api_compatibility=True)
+        eval_env = gym_super_mario_bros.make(args.env,render_mode = 'human', apply_api_compatibility=True)
         
         
     env = ProcessEnv(env)
@@ -187,9 +184,6 @@ if __name__ == "__main__":
     print("---------------------------------------")
 
 
-
-
-    # env.action_space.seed(args.seed)
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
     
