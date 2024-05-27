@@ -171,54 +171,44 @@ class agent(object):
         return value, logprob, dist_entropy
     
     
-    def train(self):
+    def train(self,sample):
         
-        value_loss_epoch = 0
-        actor_loss_epoch = 0
         
-        for i in range(self.ppo):
-            data_generator = self.replaybuffer.PPOsample(self.num_mini_batch)
-            
-            for sample in data_generator:
-                state,action,old_action_log_probs,returns,advs,old_z = sample
+        state,action,old_action_log_probs,returns,advs,old_z = sample
                 
-                values, action_log_probs, dist_entropy = self.evaluate_actions(state,action,old_z)
+        values, action_log_probs, dist_entropy = self.evaluate_actions(state,action,old_z)
                 
-                ratio =  torch.exp(action_log_probs - old_action_log_probs)
-                surr1 = ratio * advs
-                surr2 = torch.clamp(ratio, 1.0 - self.clip, 1.0 + self.clip) * advs
-                actor_loss = -torch.min(surr1, surr2).sum(dim=-1).mean()
+        ratio =  torch.exp(action_log_probs - old_action_log_probs)
+        surr1 = ratio * advs
+        surr2 = torch.clamp(ratio, 1.0 - self.clip, 1.0 + self.clip) * advs
+        actor_loss = -torch.min(surr1, surr2).sum(dim=-1).mean()
                 
                 
-                value_loss = F.mse_loss(returns.mean(-1,keepdim=True), values)
-                actor_loss = self.actor * actor_loss - self.entropy * dist_entropy
-                loss = actor_loss + self.value * value_loss
+        value_loss = F.mse_loss(returns.mean(-1,keepdim=True), values)
+        actor_loss = self.actor * actor_loss - self.entropy * dist_entropy
+        loss = actor_loss + self.value * value_loss
                 
                 
-                self.actorCritic_o.zero_grad()
-                loss.backward()
-                torch.nn.utils.clip_grad_norm_(self.actorCritic.parameters(), self.grad)
-                self.actorCritic_o.step()
+        self.actorCritic_o.zero_grad()
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.actorCritic.parameters(), self.grad)
+        self.actorCritic_o.step()
                 
-                value_loss_epoch += value_loss.item()
-                actor_loss_epoch += actor_loss.item()
-                
+        value_loss = value_loss.item()
+        actor_loss = actor_loss.item()
         
-        value_loss_epoch /= (self.ppo * self.num_mini_batch)
-        actor_loss_epoch /= (self.ppo * self.num_mini_batch)
-        
-        return  actor_loss_epoch,value_loss_epoch 
+        return  actor_loss,value_loss 
     
     
     def save(self,filename):
         torch.save(self.actorCritic.state_dict(),filename+"_actorCritic")
-        torch.save(self.actorCritic_o.state_dict(),filename+"_actorCritic_optim")
+        # torch.save(self.actorCritic_o.state_dict(),filename+"_actorCritic_optim")
         
         
         
     def load(self,filename):
         self.actorCritic.load_state_dict(torch.load(filename+"_actorCritic"))
-        self.actorCritic_o.load_state_dict(torch.load(filename+"_actorCritic_optim"))
+        # self.actorCritic_o.load_state_dict(torch.load(filename+"_actorCritic_optim"))
         
     def IsCheckpoint(self,Score):
         if self.Maxscore<Score:

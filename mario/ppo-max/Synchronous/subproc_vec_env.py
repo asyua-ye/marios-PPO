@@ -5,7 +5,7 @@ import numpy as np
 from utils.vec_env import VecEnv, CloudpickleWrapper, clear_mpi_env_vars
 
 
-def worker(remote, parent_remote, env_fn_wrappers, hp):
+def worker(remote, parent_remote, env_fn_wrappers,hp):
     def step_env(env, action):
         ob, reward, done,_,info = env.step(action)
         if done:
@@ -46,7 +46,7 @@ class SubprocVecEnv(VecEnv):
     VecEnv that runs multiple environments in parallel in subproceses and communicates with them via pipes.
     Recommended to use when num_envs > 1 and step() can be a bottleneck.
     """
-    def __init__(self, env_fns, hp, spaces=None, context='spawn', in_series=1):
+    def __init__(self, env_fns, hp, spaces=None, context='spawn',in_series=1):
         """
         Arguments:
 

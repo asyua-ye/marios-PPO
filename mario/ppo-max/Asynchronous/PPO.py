@@ -4,8 +4,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 import buffer
 import numpy as np
-from torch.distributions import Normal
 import math
+from torch.distributions import Normal
+from torch.optim.lr_scheduler import LambdaLR
 
 
         
@@ -38,6 +39,8 @@ class ActorCritic(nn.Module):
         x = F.relu(self.conv2(x))
         x = F.relu(self.conv3(x))
         x = x.view(x.size(0), -1)
+        
+        
         
         v = F.relu(self.fc1(x))
         value = self.critic_linear(v)
@@ -105,12 +108,17 @@ class ActorCritic(nn.Module):
         return self.conv3(self.conv2(self.conv1(torch.zeros(1, *self.state_dim)))).view(1, -1).size(1)
 
     def _initialize_weights(self):
-        for module in self.modules():
-            if isinstance(module, nn.Conv2d) or isinstance(module, nn.Linear):
+        for name, module in self.named_modules():
+            if name =='mean_linear' or name == 'log_std_linear':
+                nn.init.orthogonal_(module.weight, 0.01)
+            elif name == 'critic_linear':
+                nn.init.orthogonal_(module.weight, 1.0)
+            else :
                 nn.init.orthogonal_(module.weight, nn.init.calculate_gain('relu'))
                 # nn.init.xavier_uniform_(module.weight)
                 # nn.init.kaiming_uniform_(module.weight)
-                nn.init.constant_(module.bias, 0)
+            if module.bias is not None:
+                    nn.init.constant_(module.bias, 0)
     
     
 
@@ -121,9 +129,11 @@ class agent(object):
         self.state_dim = state_dim
         self.action_dim = action_dim
         self.actorCritic = ActorCritic(self.state_dim,self.action_dim,max_action,hp.log_std_min,hp.log_std_max).to(self.device)
-        self.actorCritic_o = torch.optim.Adam(self.actorCritic.parameters(),lr=hp.actor_lr)
+        self.actorCritic_o = torch.optim.Adam(self.actorCritic.parameters(),lr=hp.actor_lr,eps=hp.eps)
         self.replaybuffer = buffer.ReplayBuffer(hp.buffer_size,hp.num_processes,hp.num_steps)
         
+        lambda_lr = lambda step: 1 - step / hp.max_steps if step < hp.max_steps else 0
+        self.scheduler = LambdaLR(self.actorCritic_o, lr_lambda=lambda_lr)
         
         #PPO
         self.ppo = hp.ppo_update
@@ -136,6 +146,7 @@ class agent(object):
         
         #checkpoint
         self.Maxscore = 0
+        self.learn_step = 0
         
         
         
@@ -171,48 +182,52 @@ class agent(object):
         return value, logprob, dist_entropy
     
     
-    def train(self):
+    def train(self,sample):
         
-        value_loss_epoch = 0
-        actor_loss_epoch = 0
         
-        for i in range(self.ppo):
-            data_generator = self.replaybuffer.PPOsample(self.num_mini_batch)
-            
-            for sample in data_generator:
-                state,action,old_action_log_probs,returns,advs,old_z = sample
+        state,action,old_action_log_probs,returns,advs,old_z = sample
                 
-                values, action_log_probs, dist_entropy = self.evaluate_actions(state,action,old_z)
+        values, action_log_probs, dist_entropy = self.evaluate_actions(state,action,old_z)
                 
-                ratio =  torch.exp(action_log_probs - old_action_log_probs)
-                surr1 = ratio * advs
-                surr2 = torch.clamp(ratio, 1.0 - self.clip, 1.0 + self.clip) * advs
-                actor_loss = -torch.min(surr1, surr2).sum(dim=-1).mean()
+        ratio =  torch.exp(action_log_probs - old_action_log_probs)
+        surr1 = ratio * advs
+        surr2 = torch.clamp(ratio, 1.0 - self.clip, 1.0 + self.clip) * advs
+        actor_loss = -torch.min(surr1, surr2).sum(dim=-1).mean()
                 
                 
-                value_loss = F.mse_loss(returns.mean(-1,keepdim=True), values)
-                actor_loss = self.actor * actor_loss - self.entropy * dist_entropy
-                loss = actor_loss + self.value * value_loss
+        for name, param in self.actorCritic.named_parameters():
+            if 'conv1' in name or 'conv2' in name or 'conv3' in name:
+                param.requires_grad = False
                 
+        actor_loss = self.actor * actor_loss - self.entropy * dist_entropy
                 
-                self.actorCritic_o.zero_grad()
-                loss.backward()
-                torch.nn.utils.clip_grad_norm_(self.actorCritic.parameters(), self.grad)
-                self.actorCritic_o.step()
+        self.actorCritic_o.zero_grad()
+        actor_loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.actorCritic.parameters(), self.grad)
+        self.actorCritic_o.step()
+               
+        for name, param in self.actorCritic.named_parameters():
+            if 'conv1' in name or 'conv2' in name or 'conv3' in name:
+                param.requires_grad = True
                 
-                value_loss_epoch += value_loss.item()
-                actor_loss_epoch += actor_loss.item()
+        value_loss = F.mse_loss(returns.mean(-1,keepdim=True), values)
                 
+        self.actorCritic_o.zero_grad()
+        value_loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.actorCritic.parameters(), self.grad)
+        self.actorCritic_o.step()
         
-        value_loss_epoch /= (self.ppo * self.num_mini_batch)
-        actor_loss_epoch /= (self.ppo * self.num_mini_batch)
+        self.scheduler.step()
+                
+        value_loss = value_loss.item()
+        actor_loss = actor_loss.item()
         
-        return  actor_loss_epoch,value_loss_epoch 
+        return  actor_loss,value_loss 
     
     
     def save(self,filename):
         torch.save(self.actorCritic.state_dict(),filename+"_actorCritic")
-        torch.save(self.actorCritic_o.state_dict(),filename+"_actorCritic_optim")
+        # torch.save(self.actorCritic_o.state_dict(),filename+"_actorCritic_optim")
         
         
         

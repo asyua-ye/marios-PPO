@@ -36,12 +36,14 @@ class Hyperparameters:
     num_processes: int = 8
     num_steps: int = 600
     device: torch.device = None
+    max_steps: int = 0
     
     # Actor
     actor_lr: float = 3e-4
     entropy: float = 0.01
     log_std_max: int = 2
     log_std_min: int = -20
+    eps: float = 1e-5
     
     # Critic
     critic_lr: float = 3e-4
@@ -157,6 +159,7 @@ if __name__ == "__main__":
         file_name=args.file_name,
         file_time = file_time
     )
+    hp.max_steps = hp.max_timesteps * hp.ppo_update * hp.mini_batch
     
     if args.test:
         if gym.__version__ < '0.26':
