@@ -153,8 +153,8 @@ ppo为什么均值总是训练不好，因为ppo用了normal.logprob的缘故只
 
 
 
-3.3、onpolicy与offpolicy的桥梁
-
+3.2、onpolicy与offpolicy的桥梁
+暂时不知道，怎么做....
 
 
 
