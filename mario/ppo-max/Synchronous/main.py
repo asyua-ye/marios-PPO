@@ -7,6 +7,7 @@ import os
 import time
 import datetime
 import PPO
+from utils.tool import DataProcessor,log_and_print
 from buffer import RolloutBuffer
 from pre_env import ProcessEnv
 from dataclasses import dataclass, asdict
@@ -53,6 +54,7 @@ class Hyperparameters:
     log_std_min: int = -20
     eps: float = 1e-5
     std: bool = False
+    ppg: bool = True
     
     # Critic
     critic_lr: float = 3e-4
@@ -74,7 +76,6 @@ class Hyperparameters:
     eval_eps: int = 2
     max_timesteps: int = 200
     eval: int = 1
-    Detaileval: bool = False
 
     # File
     file_name: str = None
@@ -102,19 +103,20 @@ def train_online(RL_agent, env, eval_env, rollout, hp):
     rounds = np.zeros(hp.num_processes, dtype=np.float64)
     start_time = time.time()
     file_time = datetime.datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
-    fo = (f"begin time:  {file_time}\n")
     writer = SummaryWriter(f'./{hp.file_name}/output/{file_time}/{file_time}-PPO-{hp.max_timesteps}')
     if hp.checkpoint and not os.path.exists(f"./{hp.file_name}/output/{file_time}/checkpoint/models"):
         os.makedirs(f"./{hp.file_name}/output/{file_time}/checkpoint/models")
     train = []
-    train.append(fo)
+    log_and_print(train, (f"begin time:  {file_time}\n"))
     if not os.path.exists(f"./{hp.file_name}/output/{file_time}/models/"):
         output_directory = f'./{hp.file_name}/output/{file_time}/models/'
         os.makedirs(output_directory)
         hp.save_to_file(os.path.join(output_directory, 'hyperparameters.txt'))
+    process = DataProcessor(f'./{hp.file_name}/output/{file_time}/')
     
     for t in range(int(hp.max_timesteps+1)):
         
+        s1 = time.time()
         for step in range(hp.num_steps):
             rounds += 1
             action,logit,value,z = RL_agent.select_action(np.array(state))
@@ -139,38 +141,48 @@ def train_online(RL_agent, env, eval_env, rollout, hp):
             if torch.any(mask == 0).item() and np.any(final_rewards != 0):
                 non_zero_rewards = final_rewards[final_rewards != 0]
                 writer.add_scalar('reward', np.mean(non_zero_rewards), global_step=t)
-                fo = (
+                log_and_print(train, (
                     f"T: {t} Total T: {np.sum(rounds)}  mean: {np.mean(non_zero_rewards):.3f} "
                     f"mid: {np.median(non_zero_rewards):.3f} max: {np.max(non_zero_rewards):.3f} "
                     f"min: {np.min(non_zero_rewards):.3f}"
-                        )
-                print(fo)
-                train.append(fo)
-                
-        fo = (f"Total time passed: {round((time.time()-start_time)/60.,2)} min(s)")
-        print(fo)
-        train.append(fo)
+                        ))
+        e = time.time()
+        sample_time = (e-s1)
+        log_and_print(train, f"Total time passed: {round((time.time()-start_time)/60.,2)} min(s)")
+        s = time.time()
         next_value = RL_agent.get_value(np.array(next_state))
         next_value = torch.from_numpy(next_value).view(-1,1).to(hp.device)
         states,actions,action_log_probs,advs,zs,returns = rollout.computeReturn(next_value,mask)
         data=(np.copy(states), np.copy(actions),np.copy(action_log_probs), np.copy(advs),np.copy(zs),np.copy(returns))
         RL_agent.replaybuffer.push(data)
-        fo = (f"T: {t}   sample end begintrain！！")
-        print(fo)
-        train.append(fo)
-        actor_loss,value_loss = RL_agent.train()
+        log_and_print(train, f"T: {t}   sample end begintrain！！")
+        actor_loss,value_loss = RL_agent.train(process)
         writer.add_scalar('actor_loss', actor_loss, global_step=t)
         writer.add_scalar('value_loss', value_loss, global_step=t)
+        e = time.time()
+        train_time = (e-s)   
         evals = []
         if hp.checkpoint:
-            maybe_evaluate_and_print(RL_agent, eval_env, evals, t, start_time,file_time, hp)
+            s = time.time()
+            text,total_reward = maybe_evaluate_and_print(RL_agent, eval_env, evals, t, start_time,file_time, hp)
+            e = time.time()
+            eval_time = (e-s)
+            train.extend(text)
+            process.process_input(total_reward,'Returns','eval/')
         np.savetxt(f"./{hp.file_name}/output/{file_time}/train.txt", train, fmt='%s')
         RL_agent.save(f'./{hp.file_name}/output/{file_time}/models/')
+        process.process_input(sample_time,'sample_time(s)','time/')
+        process.process_input(train_time,'train_time','time/')
+        process.process_input(eval_time,'eval_time(s)','time/')
+        e = time.time()
+        total_time = (e-s1)
+        process.process_input(total_time,'total_time(s)','time/')
+        process.process_input(t,'Epoch')
+        process.write_to_excel()
         
     env.close()
     file_time1 = datetime.datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
-    fo = (f"\nend time: {file_time1}")
-    train.append(fo)
+    log_and_print(train, f"\nend time: {file_time1}")
     np.savetxt(f"./{hp.file_name}/output/{file_time}/train.txt", train, fmt='%s')
             
             
@@ -185,10 +197,12 @@ def toTest(RL_agent, env, eval_env,file_name, hp):
     
             
 def maybe_evaluate_and_print(RL_agent, eval_env, evals, t, start_time,file_time, hp, d4rl=False):
+    
+    text = []
     if hp.checkpoint or hp.test:
-        print("---------------------------------------")
-        print(f"Evaluation at {t} time steps")
-        print(f"Total time passed: {round((time.time()-start_time)/60.,2)} min(s)")
+        log_and_print(text, "---------------------------------------")
+        log_and_print(text, f"Evaluation at {t} time steps")
+        log_and_print(text, f"Total time passed: {round((time.time() - start_time) / 60., 2)} min(s)")
 
         total_reward = np.zeros(hp.eval_eps)
         for ep in range(hp.eval_eps):
@@ -199,23 +213,24 @@ def maybe_evaluate_and_print(RL_agent, eval_env, evals, t, start_time,file_time,
                 next_state, reward, done, _, _ = eval_env.step(action)
                 total_reward[ep] += np.max(reward)
                 state = next_state
-
-        print(f"Average total reward over {hp.eval_eps} episodes: {total_reward.mean():.3f}")
+                
+        log_and_print(text, f"Average total reward over {hp.eval_eps} episodes: {total_reward.mean():.3f}")
         if d4rl:
             total_reward = eval_env.get_normalized_score(total_reward) * 100
-            print(f"D4RL score: {total_reward.mean():.3f}")
+            log_and_print(text, f"D4RL score: {total_reward.mean():.3f}")
         evals.append(total_reward)
         
         if hp.checkpoint and not hp.test:
             np.save(f"./{hp.file_name}/output/{file_time}/checkpoint/{hp.file_name}", evals)
             score = np.mean(total_reward) + np.min(total_reward) + np.max(total_reward) + np.median(total_reward) - np.std(total_reward)
             flag = RL_agent.IsCheckpoint(score)
-            print(f"This Score：{score} Max Score:{RL_agent.Maxscore}")
+            log_and_print(text, f"This Score：{score} Max Score:{RL_agent.Maxscore}")
             if flag:
                 RL_agent.save(f"./{hp.file_name}/output/{file_time}/checkpoint/models/")
         if hp.test:
             np.save(f"./{hp.file_name}/output/{file_time}/evals", evals)
         print("---------------------------------------")
+        return text,total_reward
 
 
 

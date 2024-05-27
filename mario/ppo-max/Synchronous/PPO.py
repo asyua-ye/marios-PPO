@@ -13,7 +13,7 @@ from torch.optim.lr_scheduler import LambdaLR
 
     
 class ActorCritic(nn.Module):
-    def __init__(self, state_dim, action_dim,max_action,std=False,log_std_min=-20,log_std_max=2):
+    def __init__(self, state_dim, action_dim,max_action,ppg=False,std=False,log_std_min=-20,log_std_max=2):
         super(ActorCritic, self).__init__()
         
         self.state_dim = state_dim
@@ -22,6 +22,7 @@ class ActorCritic(nn.Module):
         self.log_std_max = log_std_max
         self.max_action = max_action
         self.std = std
+        self.ppg = ppg
         
         self.conv1 = nn.Conv2d(self.state_dim[0], 32, kernel_size=8, stride=4)
         self.conv2 = nn.Conv2d(32, 64, kernel_size=4, stride=2)
@@ -51,14 +52,20 @@ class ActorCritic(nn.Module):
         x = x.view(x.size(0), -1)
         x = self.norm(x, self.state_norm)
         
+        
+        
         v = F.tanh(self.fc1(x))
         value = self.critic_linear(v)
         
-        a = F.tanh(self.fc2(x))
+        x_actor = x
+        if self.ppg:
+            x_actor = x.detach()
+        
+        a = F.tanh(self.fc2(x_actor))
         mean    = self.mean_linear(a)
         
         if not self.std:
-            s = F.tanh(self.fc3(x))
+            s = F.tanh(self.fc3(x_actor))
             log_std = self.log_std_linear(s).clamp(self.log_std_min, self.log_std_max)
         else:
             log_std = self.log_std * torch.ones(*mean.shape)
@@ -152,7 +159,7 @@ class agent(object):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.state_dim = state_dim
         self.action_dim = action_dim
-        self.actorCritic = ActorCritic(self.state_dim,self.action_dim,max_action,hp.std,hp.log_std_min,hp.log_std_max).to(self.device)
+        self.actorCritic = ActorCritic(self.state_dim,self.action_dim,max_action,hp.ppg,hp.std,hp.log_std_min,hp.log_std_max).to(self.device)
         self.actorCritic_o = torch.optim.Adam(self.actorCritic.parameters(),lr=hp.actor_lr,eps=hp.eps)
         self.replaybuffer = buffer.ReplayBuffer(hp.buffer_size,hp.num_processes,hp.num_steps)
         
@@ -207,7 +214,7 @@ class agent(object):
         return value, logprob, dist_entropy
     
     
-    def train(self):
+    def train(self,process):
         
         value_loss_epoch = 0
         actor_loss_epoch = 0
@@ -216,6 +223,7 @@ class agent(object):
             data_generator = self.replaybuffer.PPOsample(self.num_mini_batch)
             
             for sample in data_generator:
+                self.learn_step += 1
                 state,action,old_action_log_probs,returns,advs,old_z = sample
                 
                 values, action_log_probs, dist_entropy = self.evaluate_actions(state,action,old_z)
@@ -226,10 +234,6 @@ class agent(object):
                 actor_loss = -torch.min(surr1, surr2).sum(dim=-1).mean()
                 
                 
-                for name, param in self.actorCritic.named_parameters():
-                    if 'conv1' in name or 'conv2' in name or 'conv3' in name:
-                        param.requires_grad = False
-                
                 actor_loss = self.actor * actor_loss - self.entropy * dist_entropy
                 
                 self.actorCritic_o.zero_grad()
@@ -237,9 +241,6 @@ class agent(object):
                 torch.nn.utils.clip_grad_norm_(self.actorCritic.parameters(), self.grad)
                 self.actorCritic_o.step()
                 
-                for name, param in self.actorCritic.named_parameters():
-                    if 'conv1' in name or 'conv2' in name or 'conv3' in name:
-                        param.requires_grad = True
                 
                 value_loss = F.mse_loss(returns.mean(-1,keepdim=True), values)
                 
@@ -254,7 +255,17 @@ class agent(object):
                 value_loss_epoch += value_loss.item()
                 actor_loss_epoch += actor_loss.item()
                 
-                
+            if i == self.ppo - 1:
+                process.process_input(self.learn_step, 'learn_step', 'train/')
+                process.process_input(actor_loss.item(), 'actor_loss', 'train/')
+                process.process_input(value_loss.item(), 'value_loss', 'train/')
+                process.process_input(dist_entropy.item(), 'dist_entropy', 'train/')
+                process.process_input(action_log_probs.detach().cpu().numpy(), 'action_log_probs', 'train/')
+                process.process_input(old_action_log_probs.detach().cpu().numpy(), 'old_action_log_probs', 'train/')
+                process.process_input(ratio.detach().cpu().numpy(), 'ratio', 'train/')
+                process.process_input(surr1.detach().cpu().numpy(), 'surr1', 'train/')
+                process.process_input(values.detach().cpu().numpy(), 'values', 'train/')
+                process.process_input(returns.detach().cpu().numpy(), 'returns', 'train/')
                 
                 
         
