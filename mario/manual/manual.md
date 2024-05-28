@@ -149,12 +149,13 @@ ppo为什么均值总是训练不好，因为ppo用了normal.logprob的缘故只
 
 
 3.1、路线1：ppo的优化  
-以及MP-DQN的优化思路可以用在这里，以及加了大约10种优化的PPO-max。
+各种优化的加上去，变成了PPO-max
 
 
 
 3.2、onpolicy与offpolicy的桥梁
-暂时不知道，怎么做....
+暂时不知道，怎么做....  
+突然想到，将actor和value分别应用onpolicy和offpolicy，会怎么样？比如value用上DQN的一系列技术，actor用SAC，PPO等技术。
 
 
 

@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 import multiprocessing as mp
+from utils.tool import RunningMeanStd
 from torch.utils.data.sampler import BatchSampler, SubsetRandomSampler
 
 
@@ -20,13 +21,27 @@ class RolloutBuffer(object):
         self.discount = discount
         self.num_steps = num_steps
         self.step = 0
+        self.rewards_norm = RunningMeanStd(action_dim)
+        self.R = torch.zeros(num_processes,action_dim).to(device)
+        
+        
+    def scale(self,x,x_norm,mask):
+        
+        self.R = mask * self.R
+        self.R = self.discount * self.R + x
+        x_norm.update(self.R)
+        std = torch.tensor(self.rewards_norm.std, dtype=torch.float32, device=x.device)
+        x = x / (std + 1e-8)
+        
+        return x
 
     def insert(self, state, action,action_log_prob, value, reward, mask,z):
+        
         self.states[self.step].copy_(state)
         self.actions[self.step].copy_(action)
         self.action_log_probs[self.step].copy_(action_log_prob)
         self.values[self.step].copy_(value)
-        self.rewards[self.step].copy_(reward)
+        self.rewards[self.step].copy_(self.scale(reward,self.rewards_norm,mask))
         self.masks[self.step].copy_(mask)
         self.z[self.step].copy_(z)
 

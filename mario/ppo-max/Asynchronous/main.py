@@ -28,9 +28,8 @@ learner，就闷头训练就可以了
 @dataclass
 class Hyperparameters:
     # Generic
-    buffer_size: int = 4
-    train_size: int = 1
-    discount: float = 0.65
+    buffer_size: int = 3
+    discount: float = 0.6
     gae: float = 0.2
     grad: float = 0.5
     num_processes: int = 8
@@ -44,13 +43,16 @@ class Hyperparameters:
     log_std_max: int = 2
     log_std_min: int = -20
     eps: float = 1e-5
+    std: bool = False
+    ppg: bool = True
+    share: bool = True
     
     # Critic
     critic_lr: float = 3e-4
     
     # PPO
     clip: float = 0.25
-    ppo_update: int = 40
+    ppo_update: int = 25
     mini_batch: int = 40
     value: float = 0.5
     actor: float = 1.0
@@ -62,7 +64,7 @@ class Hyperparameters:
 
     # Evaluation
     checkpoint: bool = True
-    eval_eps: int = 7
+    eval_eps: int = 2
     max_timesteps: int = 200
     eval: int = 1
 
@@ -119,7 +121,7 @@ if __name__ == "__main__":
     # Evaluation
     parser.add_argument("--checkpoint", default=True, action=argparse.BooleanOptionalAction)
     parser.add_argument("--eval_eps", default=2, type=int)
-    parser.add_argument("--max_timesteps", default=200, type=int)
+    parser.add_argument("--max_timesteps", default=1000, type=int)
     parser.add_argument("--eval",default=1,type=int)
     # File
     parser.add_argument('--file_name', default=None)
