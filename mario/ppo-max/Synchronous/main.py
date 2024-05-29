@@ -43,7 +43,7 @@ class Hyperparameters:
     gae: float = 0.2
     grad: float = 0.5
     num_processes: int = 8
-    num_steps: int = 600
+    num_steps: int = 10
     device: torch.device = None
     max_steps: int = 0
     

@@ -29,9 +29,11 @@ class ActorCritic(nn.Module):
         self.conv2 = nn.Conv2d(32, 64, kernel_size=4, stride=2)
         self.conv3 = nn.Conv2d(64, 64, kernel_size=3, stride=1)
         self.fc1 = nn.Linear(self.feature_size(), 512)
+        self.fc1_1 = nn.Linear(512, 512)
         self.critic_linear = nn.Linear(512, 1)
         
         self.fc2 = nn.Linear(self.feature_size(), 512)
+        self.fc2_1 = nn.Linear(512, 512)
         self.mean_linear = nn.Linear(512, action_dim)
         
         if self.std:
@@ -39,6 +41,7 @@ class ActorCritic(nn.Module):
             self.log_std = nn.Parameter(torch.zeros(action_dim))
         else:
             self.fc3 = nn.Linear(self.feature_size(), 512)
+            self.fc3_1 = nn.Linear(512, 512)
             self.log_std_linear = nn.Linear(512, action_dim)  
         
         self.state_norm = RunningMeanStd(self.feature_size())
@@ -46,7 +49,7 @@ class ActorCritic(nn.Module):
         self._initialize_weights()
 
 
-    def forward(self, x):
+    def forward(self, x, isAction=True):
         x = F.relu(self.conv1(x))
         x = F.relu(self.conv2(x))
         x = F.relu(self.conv3(x))
@@ -54,31 +57,35 @@ class ActorCritic(nn.Module):
         x = self.norm(x, self.state_norm)
         
         
-        
-        v = F.tanh(self.fc1(x))
-        value = self.critic_linear(v)
-        
-        x_actor = x
-        if self.ppg:
-            x_actor = x.detach()
-        
-        a = F.tanh(self.fc2(x_actor))
-        mean    = self.mean_linear(a)
-        
-        if not self.std:
-            if self.share:
-                log_std = self.log_std_linear(a).clamp(self.log_std_min, self.log_std_max)
-            else:    
-                s = F.tanh(self.fc3(x_actor))
-                log_std = self.log_std_linear(s).clamp(self.log_std_min, self.log_std_max)
+        if not isAction:
+            v = F.tanh(self.fc1(x))
+            v = F.tanh(self.fc1_1(v))
+            value = self.critic_linear(v)
+            return value
         else:
-            log_std = self.log_std * torch.ones(*mean.shape)
+            x_actor = x
+            if self.ppg:
+                x_actor = x.detach()
+            
+            a = F.tanh(self.fc2(x_actor))
+            a = F.tanh(self.fc2_1(a))
+            mean    = self.mean_linear(a)
+            
+            if not self.std:
+                if self.share:
+                    log_std = self.log_std_linear(a).clamp(self.log_std_min, self.log_std_max)
+                else:    
+                    s = F.tanh(self.fc3(x_actor))
+                    s = F.tanh(self.fc3_1(s))
+                    log_std = self.log_std_linear(s).clamp(self.log_std_min, self.log_std_max)
+            else:
+                log_std = self.log_std * torch.ones(*mean.shape)
         
-        return mean, log_std, value
+            return mean, log_std
     
     def getAction(self,state,deterministic=False,with_logprob=True,rsample=True):
         
-        mean, log_std, value= self.forward(state)
+        mean, log_std= self.forward(state,True)
         
         
         std = log_std.exp()
@@ -107,16 +114,16 @@ class ActorCritic(nn.Module):
         action = self.max_action*action
         
         
-        return action,log_prob,value,z
+        return action,log_prob,z
     
     def getValue(self,state):
-        mean, log_std, value= self.forward(state)
+        value= self.forward(state,False)
         
         return value
     
     def getLogprob(self,state,action,old_z):
         
-        mean, log_std, value= self.forward(state)
+        mean, log_std= self.forward(state,True)
         
         std = log_std.exp()
         normal = Normal(mean, std)
@@ -126,7 +133,7 @@ class ActorCritic(nn.Module):
         
         distentroy= 0.5 * torch.log(2 * torch.pi * torch.e * std**2).mean()
         
-        return old_logprob,value,distentroy
+        return old_logprob,distentroy
         
 
     def feature_size(self):
@@ -194,7 +201,8 @@ class agent(object):
             state = torch.FloatTensor(state.reshape(-1, *state.shape)).to(self.device)
         else:
             state = torch.FloatTensor(state.reshape(-1, *state.shape)).squeeze().to(self.device)
-        action,logprob,value,z = self.actorCritic.getAction(state,deterministic)
+        action,logprob,z = self.actorCritic.getAction(state,deterministic)
+        value = self.actorCritic.getValue(state)
         action = action.view(-1,self.action_dim).cpu().data.numpy()
         logprob = logprob.view(-1,self.action_dim).cpu().data.numpy()
         value = value.view(-1,1).cpu().data.numpy()
@@ -214,10 +222,10 @@ class agent(object):
     
     def evaluate_actions(self, state,actions,old_z):
         
-        logprob,value,dist_entropy = self.actorCritic.getLogprob(state,actions,old_z)
+        logprob,dist_entropy = self.actorCritic.getLogprob(state,actions,old_z)
         
         
-        return value, logprob, dist_entropy
+        return logprob, dist_entropy
     
     
     def train(self,process,writer):
@@ -229,7 +237,7 @@ class agent(object):
                 self.learn_step += 1
                 state,action,old_action_log_probs,returns,advs,old_z = sample
                 
-                values, action_log_probs, dist_entropy = self.evaluate_actions(state,action,old_z)
+                action_log_probs, dist_entropy = self.evaluate_actions(state,action,old_z)
                 
                 ratio =  torch.exp(action_log_probs - old_action_log_probs)
                 surr1 = ratio * advs
@@ -244,6 +252,7 @@ class agent(object):
                 torch.nn.utils.clip_grad_norm_(self.actorCritic.parameters(), self.grad)
                 self.actorCritic_o.step()
                 
+                values = self.actorCritic.getValue(state)
                 
                 value_loss = F.mse_loss(returns.mean(-1,keepdim=True), values)
                 

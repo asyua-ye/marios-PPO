@@ -127,7 +127,7 @@ class SkipFrame(gym.Wrapper):
         
         obs_all = []
         obs_temp = []
-        total_reward = 0
+        total_reward = np.zeros(self.action_dim)
         old = 0
         for i in range(skips):
             obs, reward, done, trunk, info = self.env.step(real_a)
@@ -135,7 +135,7 @@ class SkipFrame(gym.Wrapper):
                 self.old_info = info
             reward = Reward(info,reward,self.old_info,done)
             self.old_info = info
-            total_reward += reward
+            total_reward[a] += reward
             if i == 0 or i == skips - 1 or i in random_values:
                 obs_all.append(obs)
                 old = i

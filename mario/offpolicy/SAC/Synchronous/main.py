@@ -38,24 +38,25 @@ env = gym_super_mario_bros.make(args.env, render_mode='human', apply_api_compati
 @dataclass
 class Hyperparameters:
     # Generic
-    buffer_size: int = 200
+    buffer_size: int = 20
     discount: float = 0.6
     gae: float = 0.2
     grad: float = 0.5
     num_processes: int = 8
-    num_steps: int = 600
+    num_steps: int = 10
     device: torch.device = None
     max_steps: int = 0
     
     # Actor
-    actor_lr: float = 3e-4
+    actor_lr: float = 3e-5
     entropy: float = 0.01
     log_std_max: int = 2
     log_std_min: int = -20
     eps: float = 1e-5
     std: bool = False
-    ppg: bool = True
+    ppg: bool = False
     share: bool = True
+    MP: bool = False
     
     # Critic
     critic_lr: float = 3e-4

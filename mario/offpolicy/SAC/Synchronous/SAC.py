@@ -30,14 +30,17 @@ class ActorCritic(nn.Module):
         self.conv3 = nn.Conv2d(64, 64, kernel_size=3, stride=1)
         
         self.fc1_1 = nn.Linear(self.feature_size()+action_dim, 512)
+        self.fc1_1_1 = nn.Linear(512, 512)
         self.q1 = nn.Linear(512, action_dim)
         
         self.fc1_2 = nn.Linear(self.feature_size()+action_dim, 512)
+        self.fc1_2_1 = nn.Linear(512, 512)
         self.q2 = nn.Linear(512, action_dim)
         
         
         
         self.fc2 = nn.Linear(self.feature_size(), 512)
+        self.fc2_1_1 = nn.Linear(512, 512)
         self.mean_linear = nn.Linear(512, action_dim)
         
         if self.std:
@@ -45,6 +48,7 @@ class ActorCritic(nn.Module):
             self.log_std = nn.Parameter(torch.zeros(action_dim))
         else:
             self.fc3 = nn.Linear(self.feature_size(), 512)
+            self.fc3_1_1 = nn.Linear(512, 512)
             self.log_std_linear = nn.Linear(512, action_dim)  
         
         self.state_norm = RunningMeanStd(self.feature_size())
@@ -65,10 +69,12 @@ class ActorCritic(nn.Module):
         
             sa = torch.cat([x, action], 1)
             q1 = F.tanh(self.fc1_1(sa))
+            q1 = F.tanh(self.fc1_1_1(q1))
             q1 = self.q1(q1)
             
             
             q2 = F.tanh(self.fc1_2(sa))
+            q2 = F.tanh(self.fc1_2_1(q2))
             q2 = self.q2(q2)
             
             return q1,q2
@@ -79,6 +85,7 @@ class ActorCritic(nn.Module):
                 x_actor = x.detach()
             
             a = F.tanh(self.fc2(x_actor))
+            a = F.tanh(self.fc2_1_1(a))
             mean    = self.mean_linear(a)
             
             if not self.std:
@@ -86,6 +93,7 @@ class ActorCritic(nn.Module):
                     log_std = self.log_std_linear(a).clamp(self.log_std_min, self.log_std_max)
                 else:    
                     s = F.tanh(self.fc3(x_actor))
+                    s = F.tanh(self.fc3_1_1(s))
                     log_std = self.log_std_linear(s).clamp(self.log_std_min, self.log_std_max)
             else:
                 log_std = self.log_std * torch.ones(*mean.shape)
@@ -110,8 +118,8 @@ class ActorCritic(nn.Module):
                 z = normal.sample()
                 
                 
-                
-        action = torch.sigmoid(z)
+        action = torch.sigmoid(z)      
+        # action = torch.tanh(z)
         
         if with_logprob:
             log_prob = normal.log_prob(z)
@@ -196,6 +204,7 @@ class agent(object):
         self.adaptive_alpha = hp.adaptive_alpha
         self.tau = hp.tau
         self.grad = hp.grad
+        self.mp = hp.MP
         if self.adaptive_alpha:
             # Target Entropy = −dim(A) (e.g. , -6 for HalfCheetah-v2) as given in the paper
             self.target_entropy = -action_dim
@@ -246,10 +255,29 @@ class agent(object):
             #updata  actor
             ####################
             new_action, log_prob= self.actorCritic.getAction(state)
-            new_q1,new_q2 = self.actorCritic.getQ(state,new_action)
+            
+            if self.mp:
+                new_action_flat = new_action.flatten()
+                new_action_one_hot = torch.zeros(state.shape[0] * self.action_dim, self.action_dim).to(new_action.device)
+                indices = torch.arange(state.shape[0] * self.action_dim)
+                column_indices = indices % self.action_dim
+                new_action_one_hot[indices, column_indices] = new_action_flat
+
+                state_for_one_hot = state.repeat(*([7] + [1] * (state.dim() - 1)))
+                new_q1, new_q2 = self.actorCritic.getQ(state_for_one_hot, new_action_one_hot)
+                
+                assert new_q1.shape == (state.shape[0] * self.action_dim, self.action_dim)
+                assert new_q2.shape == (state.shape[0] * self.action_dim, self.action_dim)
+
+                action_indices = torch.nonzero(new_action_one_hot, as_tuple=True)[1].view(-1, 1)
+                new_q1 = new_q1.gather(1, action_indices).view(state.shape[0], self.action_dim)
+                new_q2 = new_q2.gather(1, action_indices).view(state.shape[0], self.action_dim)
+
+            else:
+                new_q1, new_q2 = self.actorCritic.getQ(state, new_action)
+            
             new_q = torch.min(new_q1,new_q2)
             actor_loss = (self.alpha*log_prob - new_q).mean()
-            
             
             
             self.actorCritic_o.zero_grad()
