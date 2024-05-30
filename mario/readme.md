@@ -1,28 +1,21 @@
-## v1
-只修改了action，并且做了对比  
+## 早期阶段
+v1只修改了action，并且做了对比  
 - Continuous 连续空间，可以是SAC，PPO，TD3等
 - Discrete 离散空间，可以是PPO，DQN等
 
-
-## v2
-修改action的基础上，修改奖励函数，并且做了对比
+v2修改action的基础上，修改奖励函数，并且做了对比
 - Continuous
 - Discrete
 
 
-## v3
-在前两个修改的基础上，并行框架的引入
+v3在前两个修改的基础上，并行框架的引入
 - 同步：  
 1、Continuous  
 2、Discrete  
 
-
 - 异步：  
 1、Continuous  
 2、Discrete  
-
-
-
 
 
 ## manual
