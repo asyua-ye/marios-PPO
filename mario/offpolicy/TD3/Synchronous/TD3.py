@@ -43,13 +43,6 @@ class ActorCritic(nn.Module):
         self.fc2_1_1 = nn.Linear(512, 512)
         self.mean_linear = nn.Linear(512, action_dim)
         
-        if self.std:
-            #这样所有批量都用一个std吗？
-            self.log_std = nn.Parameter(torch.zeros(action_dim))
-        else:
-            self.fc3 = nn.Linear(self.feature_size(), 512)
-            self.fc3_1_1 = nn.Linear(512, 512)
-            self.log_std_linear = nn.Linear(512, action_dim)  
         
         self.state_norm = RunningMeanStd(self.feature_size())
         
@@ -88,50 +81,17 @@ class ActorCritic(nn.Module):
             a = F.tanh(self.fc2_1_1(a))
             mean    = self.mean_linear(a)
             
-            if not self.std:
-                if self.share:
-                    log_std = self.log_std_linear(a).clamp(self.log_std_min, self.log_std_max)
-                else:    
-                    s = F.tanh(self.fc3(x_actor))
-                    s = F.tanh(self.fc3_1_1(s))
-                    log_std = self.log_std_linear(s).clamp(self.log_std_min, self.log_std_max)
-            else:
-                log_std = self.log_std * torch.ones(*mean.shape)
                     
-            return mean, log_std
+            return mean
     
-    def getAction(self,state,deterministic=False,with_logprob=True,rsample=True):
+    def getAction(self,state):
         
-        mean, log_std= self.forward(state)
-        
-        
-        std = log_std.exp()
-        
-        normal = Normal(mean, std)
-        
-        if deterministic:
-            z = mean
-        else:
-            if rsample:
-                z = normal.rsample()
-            else:
-                z = normal.sample()
-                
-                
-        action = torch.sigmoid(z)      
+        mean= self.forward(state)  
+        action = torch.sigmoid(mean)
         # action = torch.tanh(z)
-        
-        if with_logprob:
-            log_prob = normal.log_prob(z)
-            # log_prob -= (2 * (np.log(2) - z - F.softplus(-2 * z)))
-            log_prob -= torch.log(1 - action.pow(2) + 1e-6)
-        else:
-            log_prob = None
-            
         action = self.max_action*action
         
-        
-        return action,log_prob
+        return action
     
     def getQ(self,state,action):
         q1,q2= self.forward(state,action)
@@ -190,31 +150,28 @@ class agent(object):
         self.state_dim = state_dim
         self.action_dim = action_dim
         self.actorCritic = ActorCritic(self.state_dim,self.action_dim,max_action,hp.share,hp.ppg,hp.std,hp.log_std_min,hp.log_std_max).to(self.device)
-        self.Q_target = copy.deepcopy(self.actorCritic)
+        self.target = copy.deepcopy(self.actorCritic)
         self.actorCritic_o = torch.optim.Adam(self.actorCritic.parameters(),lr=hp.actor_lr,eps=hp.eps)
         self.replaybuffer = buffer.ReplayBuffer(hp.buffer_size,hp.num_processes,hp.num_steps)
         
         lambda_lr = lambda step: 1 - step / hp.max_steps if step < hp.max_steps else 0
         self.scheduler = LambdaLR(self.actorCritic_o, lr_lambda=lambda_lr)
         self.dicount = hp.discount
-        
-        #SAC
+        self.max_action = max_action
+        #TD3
         self.batch = hp.batch
         self.num_epch_train = hp.num_epch_train
-        self.adaptive_alpha = hp.adaptive_alpha
         self.tau = hp.tau
         self.grad = hp.grad
         self.mp = hp.MP
-        if self.adaptive_alpha:
-            # Target Entropy = −dim(A) (e.g. , -6 for HalfCheetah-v2) as given in the paper
-            self.target_entropy = -action_dim
-            # We learn log_alpha instead of alpha to ensure that alpha=exp(log_alpha)>0
-            self.log_alpha = torch.zeros(1, requires_grad=True)
-            self.alpha = self.log_alpha.exp()
-            self.alpha_optimizer = torch.optim.Adam([self.log_alpha], lr=hp.actor_lr)
-        else:
-            self.alpha = hp.alpha
+        self.noiseClip = hp.noiseclip
+        self.updaeActor = hp.update_actor
+        self.actionNoise = hp.actionNoise
+        self.exNoise = hp.exNoise
         
+        #LAP
+        self.min_priority = hp.min_priority
+        self.LAPalpha = hp.LAPalpha
         
         
         
@@ -231,9 +188,12 @@ class agent(object):
             state = torch.FloatTensor(state.reshape(-1, *state.shape)).to(self.device)
         else:
             state = torch.FloatTensor(state.reshape(-1, *state.shape)).squeeze().to(self.device)
-        action,logprob = self.actorCritic.getAction(state,deterministic)
+        action = self.actorCritic.getAction(state)
         action = action.view(-1,self.action_dim).cpu().data.numpy()
-        logprob = logprob.view(-1,self.action_dim).cpu().data.numpy()
+        if not deterministic:
+            exnoise = np.random.uniform(0, self.exNoise, size=action.shape[0])
+            temp = np.random.normal(0, self.max_action * exnoise[:, np.newaxis], size=(action.shape[0], self.action_dim))
+            action = (action+ temp).clip(0, self.max_action)
         
         return action
     
@@ -249,54 +209,73 @@ class agent(object):
             self.learn_step += 1
             state, action,next_state,reward,mask,exp=sample
             
-            
-            
-            ####################
-            #updata  actor
-            ####################
-            new_action, log_prob= self.actorCritic.getAction(state)
-            
-            if self.mp:
-                new_action_flat = new_action.flatten()
-                new_action_one_hot = torch.zeros(state.shape[0] * self.action_dim, self.action_dim).to(new_action.device)
-                indices = torch.arange(state.shape[0] * self.action_dim)
-                column_indices = indices % self.action_dim
-                new_action_one_hot[indices, column_indices] = new_action_flat
-
-                state_for_one_hot = state.repeat(*([7] + [1] * (state.dim() - 1)))
-                new_q1, new_q2 = self.actorCritic.getQ(state_for_one_hot, new_action_one_hot)
+            actor_loss = torch.zeros(1)
+            new_action = torch.zeros_like(action)
+            new_q = torch.zeros_like(action)
+            if self.learn_step % self.updaeActor == 0:
+                ####################
+                #updata  actor
+                ####################
+                new_action= self.actorCritic.getAction(state)
                 
-                assert new_q1.shape == (state.shape[0] * self.action_dim, self.action_dim)
-                assert new_q2.shape == (state.shape[0] * self.action_dim, self.action_dim)
+                if self.mp:
+                    new_action_flat = new_action.flatten()
+                    new_action_one_hot = torch.zeros(state.shape[0] * self.action_dim, self.action_dim).to(new_action.device)
+                    indices = torch.arange(state.shape[0] * self.action_dim)
+                    column_indices = indices % self.action_dim
+                    new_action_one_hot[indices, column_indices] = new_action_flat
 
-                action_indices = torch.nonzero(new_action_one_hot, as_tuple=True)[1].view(-1, 1)
-                new_q1 = new_q1.gather(1, action_indices).view(state.shape[0], self.action_dim)
-                new_q2 = new_q2.gather(1, action_indices).view(state.shape[0], self.action_dim)
+                    state_for_one_hot = state.repeat(*([7] + [1] * (state.dim() - 1)))
+                    new_q1, new_q2 = self.actorCritic.getQ(state_for_one_hot, new_action_one_hot)
+                    
+                    assert new_q1.shape == (state.shape[0] * self.action_dim, self.action_dim)
+                    assert new_q2.shape == (state.shape[0] * self.action_dim, self.action_dim)
 
-            else:
-                new_q1, new_q2 = self.actorCritic.getQ(state, new_action)
+                    action_indices = torch.nonzero(new_action_one_hot, as_tuple=True)[1].view(-1, 1)
+                    new_q1 = new_q1.gather(1, action_indices).view(state.shape[0], self.action_dim)
+                    new_q2 = new_q2.gather(1, action_indices).view(state.shape[0], self.action_dim)
+
+                else:
+                    new_q1, new_q2 = self.actorCritic.getQ(state, new_action)
+                
+                new_q = new_q1 #torch.min(new_q1,new_q2)
+                actor_loss = - new_q.mean()
+                
+                
+                self.actorCritic_o.zero_grad()
+                actor_loss.backward()
+                torch.nn.utils.clip_grad_norm_(self.actorCritic.parameters(), self.grad)
+                self.actorCritic_o.step()
+                
+                self.replaybuffer.reset_max_priority()
+                
+                ####################
+                #soft updata  valuetarget
+                ####################
+                with torch.no_grad():
+                    for target_param,param in zip(self.target.parameters(),self.actorCritic.parameters()):
+                        target_param.data.copy_(
+                        target_param.data *(1 - self.tau)  + param.data * self.tau
+                    )
             
-            new_q = torch.min(new_q1,new_q2)
-            actor_loss = (self.alpha*log_prob - new_q).mean()
             
-            
-            self.actorCritic_o.zero_grad()
-            actor_loss.backward()
-            torch.nn.utils.clip_grad_norm_(self.actorCritic.parameters(), self.grad)
-            self.actorCritic_o.step()
             
             ####################
             #updata  Q
             ####################
-            q1,q2 = self.actorCritic.getQ(state,action)
             
             with torch.no_grad():
-                next_action, log_next_prob= self.actorCritic.getAction(next_state)
-                target_q1,target_q2 = self.Q_target.getQ(next_state,next_action)
-                target_q = torch.min(target_q1,target_q2)
-                target_value = target_q - self.alpha * log_next_prob
-                next_q_value = reward + mask * (self.dicount**exp) * target_value
+                noise = (
+                torch.randn_like(action) * self.actionNoise
+            ).clamp(-self.noiseClip, self.noiseClip)
+                target_a=self.target.getAction(next_state)
+                next_action = (target_a + noise).clamp(0, self.max_action)
+                # Compute the target Q value
+                target_Q1, target_Q2 = self.target.getQ(next_state, next_action)
+                target_Q = torch.min(target_Q1, target_Q2)
+                next_q_value = reward + mask * (self.dicount**exp) * target_Q
                 
+            q1,q2 = self.actorCritic.getQ(state,action)
             
             
             q1_loss = ((q1 - next_q_value)**2).mean()
@@ -310,40 +289,26 @@ class agent(object):
             
             self.scheduler.step()
             
+            ####################
+            #updata  LAP
+            ####################
             
-            ####################
-            #soft updata  valuetarget
-            ####################
-            with torch.no_grad():
-                for target_param,param in zip(self.Q_target.parameters(),self.actorCritic.parameters()):
-                    target_param.data.copy_(
-                    target_param.data *(1 - self.tau)  + param.data * self.tau
-                )
-                
-                
-            ####################
-            #alpha
-            ####################
-            if self.adaptive_alpha:
-                # We learn log_alpha instead of alpha to ensure that alpha=exp(log_alpha)>0
-                alpha_loss = -(self.log_alpha * (log_prob + self.target_entropy).detach()).mean()
-                self.alpha_optimizer.zero_grad()
-                alpha_loss.backward()
-                self.alpha_optimizer.step()
-                self.alpha = self.log_alpha.exp()
+            td_loss = 0.5 * ((q1 - next_q_value).abs() + (q2 - next_q_value).abs())
+            priority = td_loss.max(1)[0].clamp(min=self.min_priority).pow(self.LAPalpha)
+            self.replaybuffer.update_priority(priority)
+            
             
             
             writer.add_scalar('actor_loss', actor_loss.item(), global_step=self.learn_step)
             writer.add_scalar('value_loss', q_loss.item(), global_step=self.learn_step)
             
-            if i % self.num_epch_train == 0:
+            if (i+1) % self.num_epch_train == 0:
                 process.process_input(self.learn_step, 'learn_step', 'train/')
                 process.process_input(actor_loss.item(), 'actor_loss', 'train/')
                 process.process_input(q_loss.item(), 'q_loss', 'train/')
                 process.process_input(new_q.detach().cpu().numpy(), 'new_q', 'train/')
-                process.process_input(target_q.detach().cpu().numpy(), 'target_q', 'train/')
+                process.process_input(target_Q.detach().cpu().numpy(), 'target_Q', 'train/')
                 process.process_input(new_action.detach().cpu().numpy(), 'new_action', 'train/')
-                process.process_input(log_prob.detach().cpu().numpy(), 'log_prob', 'train/')
                 
     
     

@@ -82,15 +82,22 @@ class RolloutBuffer(object):
 
 
 class ReplayBuffer(object):
-    def __init__(self,max,num_processes,num_steps):
+    def __init__(self,maxs,num_processes,num_steps,prioritized=True):
         self.mem = []
         self.memlen = 0
-        self.max = max
+        self.max = maxs
         self.numactor = num_processes
         self.rollout = num_steps
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.pos = 0
         self.max_size = 0
+        self.ptr = 0
+        self.prioritized = prioritized
+        self.size = maxs * num_processes * num_steps
+        self.ind = 0
+        if prioritized:
+            self.priority = torch.zeros(self.size, device=self.device)
+            self.max_priority = 1
     
     def push(self,data):
         if len(self.mem)<self.max:
@@ -100,6 +107,12 @@ class ReplayBuffer(object):
         self.pos = (self.pos + 1) % self.max
         
         self.max_size = len(self.mem) * self.numactor * self.rollout
+        if self.prioritized:
+            self.ptr = (self.ptr + data[0].shape[0]) % self.size
+            self.priority[:self.ptr] = self.max_priority
+        
+        
+        
         
         
     def PPOsample(self, num_mini_batch=40):
@@ -131,7 +144,13 @@ class ReplayBuffer(object):
                    )
         
     def sample(self, batch_size):
-        ind = np.random.randint(0, self.max_size, size=batch_size)
+        if not self.prioritized:
+            self.ind = np.random.randint(0, self.max_size, size=batch_size)
+        else:
+            csum = torch.cumsum(self.priority[:self.max_size], 0)
+            val = torch.rand(size=(batch_size,), device=self.device)*csum[-1]
+            self.ind = torch.searchsorted(csum, val).cpu().data.numpy()
+            
         
         state = np.empty((batch_size, *self.mem[0][0][0].shape), dtype=np.float32)
         action = np.empty((batch_size, *self.mem[0][1][0].shape), dtype=np.float32)
@@ -141,8 +160,8 @@ class ReplayBuffer(object):
         exp = np.empty((batch_size, *self.mem[0][5][0].shape), dtype=np.float32)
 
         for i in range(batch_size):
-            two = ind[i] % (self.numactor * self.rollout)
-            one = ind[i] // (self.numactor * self.rollout)
+            two = self.ind[i] % (self.numactor * self.rollout)
+            one = self.ind[i] // (self.numactor * self.rollout)
             states, actions, next_states, rewards, masks, exps = self.mem[one]
             state[i] = states[two]
             action[i] = actions[two]
@@ -157,6 +176,13 @@ class ReplayBuffer(object):
                 torch.tensor(reward).to(self.device),
                 torch.tensor(mask).to(self.device),
                 torch.tensor(exp).to(self.device))
+        
+    def update_priority(self, priority):
+        self.priority[self.ind] = priority.reshape(-1).detach()
+        self.max_priority = max(float(priority.max()), self.max_priority)
+
+    def reset_max_priority(self):
+        self.max_priority = float(self.priority[:self.max_size].max())
     
     def __len__(self):
         return len(self.mem)

@@ -6,7 +6,7 @@ import argparse
 import os
 import time
 import datetime
-import SAC
+import TD3
 from utils.tool import DataProcessor,log_and_print
 from buffer import RolloutBuffer
 from pre_env import ProcessEnv
@@ -40,10 +40,9 @@ class Hyperparameters:
     # Generic
     buffer_size: int = 20
     discount: float = 0.6
-    gae: float = 0.2
-    grad: float = 0.5
+    grad: float = 1.0
     num_processes: int = 8
-    num_steps: int = 10
+    num_steps: int = 600
     device: torch.device = None
     max_steps: int = 0
     
@@ -61,13 +60,20 @@ class Hyperparameters:
     # Critic
     critic_lr: float = 3e-4
     
-    # SAC
+    # TD3
     batch: int = 256
     num_epch_train: int = int(3e2)
-    adaptive_alpha: bool = False
-    alpha: float = 0.2
     tau: float = 5e-3
-    grad: float = 0.5
+    grad: float = 1.0
+    noiseclip: float = 0.5  
+    update_actor: int = 2
+    actionNoise: float = 0.2
+    exNoise: float = 0.1
+    priority = True
+    
+    # LAP
+    min_priority: int = 1
+    LAPalpha: float = 0.4
     
     # RL
     env: str = "SuperMarioBros-1-1-v0"
@@ -206,7 +212,7 @@ def maybe_evaluate_and_print(RL_agent, eval_env, evals, t, start_time,file_time,
             state, done = eval_env.reset(), False
             state = state[0]
             while not done:
-                action = RL_agent.select_action(np.array(state))
+                action = RL_agent.select_action(np.array(state),True)
                 next_state, reward, done, _, _ = eval_env.step(action)
                 total_reward[ep] += np.max(reward)
                 state = next_state
@@ -305,7 +311,7 @@ if __name__ == "__main__":
     envs=SubprocVecEnv(hp.num_processes,hp) if hp.num_processes > 1 else env
     
     
-    RL_agent = SAC.agent(state_dim, action_dim, max_action, hp)
+    RL_agent = TD3.agent(state_dim, action_dim, max_action, hp)
     
     rollout = RolloutBuffer(hp.num_steps, hp.num_processes, state_dim, action_dim, hp.discount)
         
