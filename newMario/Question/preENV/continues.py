@@ -2,7 +2,7 @@ import numpy as np
 import gymnasium as gym
 import cv2
 cv2.ocl.setUseOpenCL(False)
-from utils.joypad_space import myJoypadSpace
+from preENV.joypad_space import myJoypadSpace
 from gymnasium.spaces import Box
 from gymnasium.wrappers import LazyFrames
 
@@ -51,7 +51,7 @@ def Reward(info,reward,old_info,done):
 
 
 class SkipFrame(gym.Wrapper):
-    def __init__(self, env, skip,lz4_compress = False):
+    def __init__(self, env, skip, capture_rate=3, width=100, height=100, lz4_compress = False):
         """Return only every `skip`-th frame"""
         super().__init__(env)
         self._skip = skip
@@ -78,6 +78,12 @@ class SkipFrame(gym.Wrapper):
         
         self.action_space = gym.spaces.Box(low=new_low, high=new_high, dtype=action_dtype)
         self.old_info = None
+        self.screens = []
+        self._capture_rate = capture_rate
+        self._width = width
+        self._height = height
+        self.screens = []
+        self._count = 0
         
         
     def observation(self, observation):
@@ -92,7 +98,7 @@ class SkipFrame(gym.Wrapper):
         assert len(observation) == self._skip, (len(observation), self._skip)
         return LazyFrames(observation, self.lz4_compress)
 
-    def step_one(self, action):
+    def step(self, action):
         
     
         """
@@ -131,6 +137,12 @@ class SkipFrame(gym.Wrapper):
         old = 0
         for i in range(skips):
             obs, reward, done, trunk, info = self.env.step(real_a)
+            
+            render_modes = self.env.metadata['render.modes']
+            if 'rgb_array' in render_modes:
+                screen = self.env.render()
+                self.screens.append(screen)
+            
             if self.old_info is None:
                 self.old_info = info
             reward = Reward(info,reward,self.old_info,done)
@@ -167,7 +179,7 @@ class SkipFrame(gym.Wrapper):
                 break
         return self.observation(obs_all), total_reward, done, trunk, info
     
-    def step(self,action):
+    def step_one(self,action):
         
         """
         这个是规划了不能变的版本
@@ -205,6 +217,11 @@ class SkipFrame(gym.Wrapper):
             if len(real_a)==0:
                 real_a = [['NOOP']]
             obs, reward, done, trunk, info = self.env.step(real_a)
+            
+            render_modes = self.env.metadata['render.modes']
+            if 'rgb_array' in render_modes:
+                screen = self.env.render()
+                self.screens.append(screen)
             
             if self.old_info is None:
                 self.old_info = info
@@ -261,6 +278,18 @@ class SkipFrame(gym.Wrapper):
         [obs_all.append(obs) for _ in range(self._skip)]
 
         return self.observation(obs_all), info
+    
+    def getScreens(self):
+        processed_screens = []
+        for i, frame in enumerate(self.screens):
+            if i % self._capture_rate == 0:
+                resized_frame = self.resize_frame(frame)
+                processed_screens.append(resized_frame)
+        return processed_screens
+
+    def resize_frame(self, frame):
+        return cv2.resize(frame, (self._width, self._height), interpolation=cv2.INTER_CUBIC)
+
 
 
     
@@ -320,6 +349,10 @@ class WarpFrame(gym.ObservationWrapper):
             return new_obs
         else:
             return obs_all
+        
+    def getScreens(self):
+        
+        return self.env.getScreens()
     
     
 class ScaledFloatFrame(gym.ObservationWrapper):
@@ -331,6 +364,10 @@ class ScaledFloatFrame(gym.ObservationWrapper):
         # careful! This undoes the memory optimization, use
         # with smaller replay buffers only.
         return np.array(observation).astype(np.float32) / 255.0
+    
+    def getScreens(self):
+        
+        return self.env.getScreens()
     
     
 def ProcessEnv(env,N=4):
