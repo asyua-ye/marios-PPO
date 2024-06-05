@@ -82,107 +82,120 @@ class RolloutBuffer(object):
 
 
 class ReplayBuffer(object):
-    def __init__(self,maxs,num_processes,num_steps,prioritized=True):
-        self.mem = []
-        self.memlen = 0
+    def __init__(self, maxs, num_processes, num_steps, prioritized=True, alpha=0.6, beta_start=0.4, beta_frames=1000000, min_priority=0.01):
         self.max = maxs
         self.numactor = num_processes
         self.rollout = num_steps
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.pos = 0
-        self.max_size = 0
-        self.ptr = 0
+        
+        # 分开存储各个属性
+        self.states = []
+        self.actions = []
+        self.masks = []
+        self.rewards = []
+        self.next_states = []
+        self.exps = []
+
         self.prioritized = prioritized
         self.size = maxs * num_processes * num_steps
+        self.alpha = alpha
+        self.beta_start = beta_start
+        self.beta_frames = beta_frames
+        self.frame = 0
+        self.min_priority = min_priority
+        self.priorities_updated = False
         self.ind = 0
         if prioritized:
             self.priority = torch.zeros(self.size, device=self.device)
             self.max_priority = 1
-    
-    def push(self,data):
-        if len(self.mem)<self.max:
-            self.mem.append(data)
+            self.ptr = 0
+
+    def push(self, data):
+        state, action, next_state, reward, mask, exp = data
+        
+        if len(self.states) < self.max:
+            self.states.append(state)
+            self.actions.append(action)
+            self.masks.append(mask)
+            self.rewards.append(reward)
+            self.next_states.append(next_state)
+            self.exps.append(exp)
         else:
-            self.mem[int(self.pos)]=(data)
+            self.states[self.pos] = state
+            self.actions[self.pos] = action
+            self.masks[self.pos] = mask
+            self.rewards[self.pos] = reward
+            self.next_states[self.pos] = next_state
+            self.exps[self.pos] = exp
+
         self.pos = (self.pos + 1) % self.max
-        
-        self.max_size = len(self.mem) * self.numactor * self.rollout
+        self.priorities_updated = True
+
         if self.prioritized:
-            self.ptr = (self.ptr + data[0].shape[0]) % self.size
-            self.priority[:self.ptr] = self.max_priority
-        
-        
-        
-        
-        
-    def PPOsample(self, num_mini_batch=40):
-        """
-        由于 PPO 是 on-policy 的，所以需要对整个回放池进行一次迭代，
-        但每次抽取的样本都是随机的且不放回的。
-        """
-        mini_batch_size = self.max_size // num_mini_batch
-        sampler = BatchSampler(SubsetRandomSampler(range(self.max_size)), mini_batch_size, drop_last=False)
+            self.ptr = (self.ptr + state.shape[0]) % self.size
+            self.priority[self.ptr - state.shape[0]:self.ptr] = self.max_priority
 
-        # 提前从内存中提取所有数据
-        states, actions, log_probs, advantages, zs, returns = zip(*self.mem)
 
-        for ind in sampler:
-            state = np.array([states[i // (self.numactor * self.rollout)][i % (self.numactor * self.rollout)] for i in ind])
-            action = np.array([actions[i // (self.numactor * self.rollout)][i % (self.numactor * self.rollout)] for i in ind])
-            action_log_prob = np.array([log_probs[i // (self.numactor * self.rollout)][i % (self.numactor * self.rollout)] for i in ind])
-            adv = np.array([advantages[i // (self.numactor * self.rollout)][i % (self.numactor * self.rollout)] for i in ind])
-            z = np.array([zs[i // (self.numactor * self.rollout)][i % (self.numactor * self.rollout)] for i in ind])
-            ret = np.array([returns[i // (self.numactor * self.rollout)][i % (self.numactor * self.rollout)] for i in ind])
-            
-            
-            yield (torch.tensor(state).to(self.device), 
-                   torch.tensor(action).to(self.device), 
-                   torch.tensor(action_log_prob).to(self.device),
-                   torch.tensor(ret).to(self.device),
-                   torch.tensor(adv).to(self.device),
-                   torch.tensor(z).to(self.device),
-                   )
-        
-    def sample(self, batch_size):
+    def sample(self, batch_size, num_epoch_train):
+        self.frame += 1
+        total_samples = batch_size * num_epoch_train
+        beta = self.beta_start + (self.frame / self.beta_frames) * (1.0 - self.beta_start)
+        beta = min(1.0, beta)
+
         if not self.prioritized:
-            self.ind = np.random.randint(0, self.max_size, size=batch_size)
+            inds = np.random.randint(0, len(self.states) * self.numactor * self.rollout, size=total_samples).reshape(num_epoch_train, batch_size)
+            weights = np.ones((num_epoch_train, batch_size))
+
+            for batch_index in range(num_epoch_train):
+                indices = inds[batch_index]
+                self.ind = indices
+                yield self.generate_batch(indices, weights[batch_index])
+
         else:
-            csum = torch.cumsum(self.priority[:self.max_size], 0)
-            val = torch.rand(size=(batch_size,), device=self.device)*csum[-1]
-            self.ind = torch.searchsorted(csum, val).cpu().data.numpy()
-            
+            priorities = self.priority[:len(self.states) * self.numactor * self.rollout]
+            for _ in range(num_epoch_train):
+                if self.priorities_updated:
+                    csum = torch.cumsum(priorities, 0)
+                    self.priorities_updated = False
+                    
+                val = torch.rand(size=(batch_size,), device=self.device) * csum[-1]
+                indices = torch.searchsorted(csum, val).cpu().numpy()
+                self.ind = indices
+                # Calculate weights for each sampled index
+                sampled_priorities = priorities[indices]
+                prob_min = priorities.min() / csum[-1]
+                max_weight = (prob_min * total_samples) ** (-beta)
+                weights = (sampled_priorities / csum[-1]) ** (-beta)
+                weights /= max_weight
+
+                yield self.generate_batch(indices, weights)
+                
+    def generate_batch(self, ind, weights):
+        state = np.array([self.states[i // (self.numactor * self.rollout)][i % (self.numactor * self.rollout)] for i in ind])
+        action = np.array([self.actions[i // (self.numactor * self.rollout)][i % (self.numactor * self.rollout)] for i in ind])
+        mask = np.array([self.masks[i // (self.numactor * self.rollout)][i % (self.numactor * self.rollout)] for i in ind])
+        reward = np.array([self.rewards[i // (self.numactor * self.rollout)][i % (self.numactor * self.rollout)] for i in ind])
+        next_state = np.array([self.next_states[i // (self.numactor * self.rollout)][i % (self.numactor * self.rollout)] for i in ind])
+        exp = np.array([self.exps[i // (self.numactor * self.rollout)][i % (self.numactor * self.rollout)] for i in ind])
         
-        state = np.empty((batch_size, *self.mem[0][0][0].shape), dtype=np.float32)
-        action = np.empty((batch_size, *self.mem[0][1][0].shape), dtype=np.float32)
-        mask = np.empty((batch_size, *self.mem[0][4][0].shape), dtype=np.float32)
-        reward = np.empty((batch_size,*self.mem[0][3][0].shape), dtype=np.float32)
-        next_state = np.empty((batch_size, *self.mem[0][2][0].shape), dtype=np.float32)
-        exp = np.empty((batch_size, *self.mem[0][5][0].shape), dtype=np.float32)
-
-        for i in range(batch_size):
-            two = self.ind[i] % (self.numactor * self.rollout)
-            one = self.ind[i] // (self.numactor * self.rollout)
-            states, actions, next_states, rewards, masks, exps = self.mem[one]
-            state[i] = states[two]
-            action[i] = actions[two]
-            mask[i] = masks[two]
-            reward[i] = rewards[two]
-            next_state[i] = next_states[two]
-            exp[i] = exps[two]
-
         return (torch.tensor(state).to(self.device), 
-                torch.tensor(action).to(self.device), 
-                torch.tensor(next_state).to(self.device),
-                torch.tensor(reward).to(self.device),
-                torch.tensor(mask).to(self.device),
-                torch.tensor(exp).to(self.device))
+            torch.tensor(action).to(self.device).to(dtype=torch.float), 
+            torch.tensor(next_state).to(self.device),
+            torch.tensor(reward).to(self.device),
+            torch.tensor(mask).to(self.device),
+            torch.tensor(exp).to(self.device),
+            torch.tensor(weights).to(self.device))
         
-    def update_priority(self, priority):
+
+    def update_priority(self, td_loss):
+        priority = td_loss.max(1)[0].clamp(min=self.min_priority).pow(self.alpha)
         self.priority[self.ind] = priority.reshape(-1).detach()
         self.max_priority = max(float(priority.max()), self.max_priority)
+        self.priorities_updated = True
 
     def reset_max_priority(self):
-        self.max_priority = float(self.priority[:self.max_size].max())
+        self.max_priority = float(self.priority[:len(self) * self.numactor * self.rollout].max())
     
     def __len__(self):
-        return len(self.mem)
+        return len(self.states)

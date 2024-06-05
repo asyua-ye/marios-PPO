@@ -11,102 +11,85 @@ from torch.optim.lr_scheduler import LambdaLR
 
 
 
-    
-class ActorCritic(nn.Module):
-    def __init__(self, state_dim, action_dim,max_action,share=False,ppg=False,std=False,log_std_min=-20,log_std_max=2):
-        super(ActorCritic, self).__init__()
+class CNN(nn.Module):
+    def __init__(self, state_dim):
+        super(CNN, self).__init__()
         
-        self.state_dim = state_dim
+        self.conv1 = nn.Conv2d(state_dim[0], 32, kernel_size=8, stride=4)
+        self.conv2 = nn.Conv2d(32, 64, kernel_size=4, stride=2)
+        self.conv3 = nn.Conv2d(64, 64, kernel_size=3, stride=1)
+        
+        
+        self.feature_size = self._get_feature_size(state_dim)
+        self.state_norm = RunningMeanStd(self.feature_size)
+        
+        self._initialize_weights()
+
+    def forward(self, x):
+        x = F.relu(self.conv1(x))
+        x = F.relu(self.conv2(x))
+        x = F.relu(self.conv3(x))
+        x = x.view(x.size(0), -1)
+        x = self.norm(x, self.state_norm)
+        
+        return x
+    
+    def norm(self, x, x_norm):
+        x_norm.update(x.detach())
+        x = x_norm.normalize(x)
+        return x
+    
+    def _get_feature_size(self, state_dim):
+        return self.conv3(self.conv2(self.conv1(torch.zeros(1, *state_dim)))).view(1, -1).size(1)
+    
+    def _initialize_weights(self):
+        for name, module in self.named_modules():
+            if hasattr(module, 'weight'):
+                nn.init.orthogonal_(module.weight, nn.init.calculate_gain('relu'))
+            if hasattr(module, 'bias') and module.bias is not None:
+                nn.init.constant_(module.bias, 0)
+                
+
+class Actor(nn.Module):
+    def __init__(self, cnn, action_dim, max_action,ppg=False,std=False,log_std_min=-20,log_std_max=2):
+        super(Actor, self).__init__()
+        
+        self.cnn = cnn
         self.action_dim = action_dim
         self.log_std_min = log_std_min
         self.log_std_max = log_std_max
         self.max_action = max_action
         self.std = std
         self.ppg = ppg
-        self.share = share
-        
-        self.conv1 = nn.Conv2d(self.state_dim[0], 32, kernel_size=8, stride=4)
-        self.conv2 = nn.Conv2d(32, 64, kernel_size=4, stride=2)
-        self.conv3 = nn.Conv2d(64, 64, kernel_size=3, stride=1)
-        
-        self.fc1_1 = nn.Linear(self.feature_size()+action_dim, 512)
-        self.fc1_1_1 = nn.Linear(512, 512)
-        self.q1 = nn.Linear(512, action_dim)
-        
-        self.fc1_2 = nn.Linear(self.feature_size()+action_dim, 512)
-        self.fc1_2_1 = nn.Linear(512, 512)
-        self.q2 = nn.Linear(512, action_dim)
-        
-        
-        
-        self.fc2 = nn.Linear(self.feature_size(), 512)
-        self.fc2_1_1 = nn.Linear(512, 512)
+        self.fc1 = nn.Linear(self.cnn.feature_size, 512)
+        self.fc1_1 = nn.Linear(512, 512)
         self.mean_linear = nn.Linear(512, action_dim)
         
         if self.std:
-            #这样所有批量都用一个std吗？
             self.log_std = nn.Parameter(torch.zeros(action_dim))
         else:
-            self.fc3 = nn.Linear(self.feature_size(), 512)
-            self.fc3_1_1 = nn.Linear(512, 512)
-            self.log_std_linear = nn.Linear(512, action_dim)  
-        
-        self.state_norm = RunningMeanStd(self.feature_size())
-        
+            self.log_std_linear = nn.Linear(512, action_dim)
+            
         self._initialize_weights()
-
-
-    def forward(self, x, action=None):
         
-        x = F.relu(self.conv1(x))
-        x = F.relu(self.conv2(x))
-        x = F.relu(self.conv3(x))
-        x = x.view(x.size(0), -1)
-        x = self.norm(x, self.state_norm)
-            
-            
-        if action is not None:    
+    def forward(self, x):
+        x = self.cnn(x)
+        if self.ppg:
+            x = x.detach()
+        x_actor = F.relu(self.fc1(x))
+        x_actor = F.relu(self.fc1_1(x_actor))
+        mean = self.mean_linear(x_actor)
         
-            sa = torch.cat([x, action], 1)
-            q1 = F.tanh(self.fc1_1(sa))
-            q1 = F.tanh(self.fc1_1_1(q1))
-            q1 = self.q1(q1)
-            
-            
-            q2 = F.tanh(self.fc1_2(sa))
-            q2 = F.tanh(self.fc1_2_1(q2))
-            q2 = self.q2(q2)
-            
-            return q1,q2
-        
+        if not self.std:
+            log_std = self.log_std_linear(x_actor).clamp(self.log_std_min, self.log_std_max)
         else:
-            x_actor = x
-            if self.ppg:
-                x_actor = x.detach()
-            
-            a = F.tanh(self.fc2(x_actor))
-            a = F.tanh(self.fc2_1_1(a))
-            mean    = self.mean_linear(a)
-            
-            if not self.std:
-                if self.share:
-                    log_std = self.log_std_linear(a).clamp(self.log_std_min, self.log_std_max)
-                else:    
-                    s = F.tanh(self.fc3(x_actor))
-                    s = F.tanh(self.fc3_1_1(s))
-                    log_std = self.log_std_linear(s).clamp(self.log_std_min, self.log_std_max)
-            else:
-                log_std = self.log_std * torch.ones(*mean.shape)
-                    
-            return mean, log_std
+            log_std = self.log_std * torch.ones(*mean.shape)
+        
+        return mean, log_std
     
-    def getAction(self,state,deterministic=False,with_logprob=True,rsample=True):
-        
-        mean, log_std= self.forward(state)
-        
-        
+    def get_action(self, state, deterministic=False, with_logprob=True, rsample=True):
+        mean, log_std = self.forward(state)
         std = log_std.exp()
-        
         normal = Normal(mean, std)
         
         if deterministic:
@@ -117,50 +100,16 @@ class ActorCritic(nn.Module):
             else:
                 z = normal.sample()
                 
-                
-        action = torch.sigmoid(z)      
-        # action = torch.tanh(z)
+        action = torch.sigmoid(z) * self.max_action
         
         if with_logprob:
             log_prob = normal.log_prob(z)
-            # log_prob -= (2 * (np.log(2) - z - F.softplus(-2 * z)))
             log_prob -= torch.log(1 - action.pow(2) + 1e-6)
         else:
             log_prob = None
-            
-        action = self.max_action*action
         
-        
-        return action,log_prob
+        return action, log_prob
     
-    def getQ(self,state,action):
-        q1,q2= self.forward(state,action)
-        
-        return q1,q2
-    
-    def getLogprob(self,state,action):
-        
-        mean, log_std= self.forward(state)
-        
-        std = log_std.exp()
-        normal = Normal(mean, std)
-        action = action / self.max_action
-        
-        old_z = torch.atanh(torch.clamp(action, min=-0.999999, max=0.999999))
-        
-        old_logprob = normal.log_prob(old_z) - torch.log(1 - action.pow(2) + 1e-6)
-    
-        return old_logprob
-        
-
-    def feature_size(self):
-        return self.conv3(self.conv2(self.conv1(torch.zeros(1, *self.state_dim)))).view(1, -1).size(1)
-    
-    def norm(self, x, x_norm):
-        x_norm.update(x.detach())
-        x = x_norm.normalize(x)
-        return x
-
     def _initialize_weights(self):
         
         if self.std:
@@ -168,20 +117,60 @@ class ActorCritic(nn.Module):
         
         for name, module in self.named_modules():
             if hasattr(module, 'weight'):
-                if name == 'conv1' or name == 'conv1' or name == 'conv1':
-                    nn.init.orthogonal_(module.weight, nn.init.calculate_gain('relu'))
-                elif name == 'mean_linear' or (name == 'log_std_linear' and not self.std):
+                if name == 'mean_linear' or (name == 'log_std_linear' and not self.std):
                     nn.init.orthogonal_(module.weight, 0.01)
-                elif name == 'q1' or name == 'q2':
+                else:
+                    nn.init.orthogonal_(module.weight, nn.init.calculate_gain('tanh'))
+            if hasattr(module, 'bias') and module.bias is not None:
+                nn.init.constant_(module.bias, 0)
+
+
+
+class Critic(nn.Module):
+    def __init__(self, cnn, action_dim):
+        super(Critic, self).__init__()
+        
+        self.cnn = cnn
+        self.fc1_1 = nn.Linear(self.cnn.feature_size + action_dim, 512)
+        self.fc1_1_1 = nn.Linear(512, 512)
+        self.q1 = nn.Linear(512, action_dim)
+        
+        self.fc1_2 = nn.Linear(self.cnn.feature_size + action_dim, 512)
+        self.fc1_2_1 = nn.Linear(512, 512)
+        self.q2 = nn.Linear(512, action_dim)
+        
+        self._initialize_weights()
+        
+    def forward(self, x, action):
+        x = self.cnn(x)
+        sa = torch.cat([x, action], 1)
+        q1 = F.relu(self.fc1_1(sa))
+        q1 = F.relu(self.fc1_1_1(q1))
+        q1 = self.q1(q1)
+        
+        q2 = F.relu(self.fc1_2(sa))
+        q2 = F.relu(self.fc1_2_1(q2))
+        q2 = self.q2(q2)
+        
+        return q1, q2
+    
+    def get_q(self, state, action):
+        q1, q2 = self.forward(state, action)
+        return q1, q2
+    
+    
+    def _initialize_weights(self):
+        
+        for name, module in self.named_modules():
+            if hasattr(module, 'weight'):
+                if name == 'q1' or name == 'q2':
                     nn.init.orthogonal_(module.weight, 1.0)
                 else:
                     nn.init.orthogonal_(module.weight, nn.init.calculate_gain('tanh'))
-                    # nn.init.xavier_uniform_(module.weight)
-                    # nn.init.kaiming_uniform_(module.weight)
             if hasattr(module, 'bias') and module.bias is not None:
                 nn.init.constant_(module.bias, 0)
-    
-    
+
+
 
 class agent(object):
     def __init__(self,state_dim, action_dim,max_action,hp) -> None:
@@ -189,13 +178,21 @@ class agent(object):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.state_dim = state_dim
         self.action_dim = action_dim
-        self.actorCritic = ActorCritic(self.state_dim,self.action_dim,max_action,hp.share,hp.ppg,hp.std,hp.log_std_min,hp.log_std_max).to(self.device)
-        self.Q_target = copy.deepcopy(self.actorCritic)
-        self.actorCritic_o = torch.optim.Adam(self.actorCritic.parameters(),lr=hp.actor_lr,eps=hp.eps)
+        
+        cnn_net = CNN(state_dim)
+        self.actor = Actor(cnn_net,self.action_dim,max_action,hp.ppg,hp.std,hp.log_std_min,hp.log_std_max).to(self.device)
+        self.critic = Critic(cnn_net,action_dim).to(self.device)
+        self.Q_target = copy.deepcopy(self.critic)
+        
+        self.actor_optimizer = torch.optim.Adam(self.actor.parameters(), lr=hp.actor_lr,eps=hp.eps)
+        self.critic_optimizer = torch.optim.Adam(self.critic.parameters(), lr=hp.critic_lr,eps=hp.eps)
+        
+        
         self.replaybuffer = buffer.ReplayBuffer(hp.buffer_size,hp.num_processes,hp.num_steps)
         
         lambda_lr = lambda step: 1 - step / hp.max_steps if step < hp.max_steps else 0
-        self.scheduler = LambdaLR(self.actorCritic_o, lr_lambda=lambda_lr)
+        self.scheduler = [LambdaLR(self.actor_optimizer, lr_lambda=lambda_lr),
+                          LambdaLR(self.critic_optimizer, lr_lambda=lambda_lr)]
         self.dicount = hp.discount
         
         #SAC
@@ -216,8 +213,6 @@ class agent(object):
             self.alpha = hp.alpha
         
         
-        
-        
         #checkpoint
         self.Maxscore = 0
         self.learn_step = 0
@@ -231,30 +226,33 @@ class agent(object):
             state = torch.FloatTensor(state.reshape(-1, *state.shape)).to(self.device)
         else:
             state = torch.FloatTensor(state.reshape(-1, *state.shape)).squeeze().to(self.device)
-        action,logprob = self.actorCritic.getAction(state,deterministic)
-        action = action.view(-1,self.action_dim).cpu().data.numpy()
+        action,logprob = self.actor.get_action(state,deterministic)
+        q1,q2 = self.critic.get_q(state,action)
+        q = torch.min(q1,q2)
+        q_mean = q.mean(-1,keepdim=True)
+        mask = torch.ge((q - q_mean), 0).int()
+        
+        action = (action * mask).view(-1,self.action_dim).cpu().data.numpy()
         logprob = logprob.view(-1,self.action_dim).cpu().data.numpy()
         
         return action
     
     
     
-    
     def train(self,process,writer):
         
-        for i in range(self.num_epch_train):
-            sample = self.replaybuffer.sample(self.batch)
-            
+        for i, sample in enumerate(self.replaybuffer.sample(self.batch, self.num_epch_train), 
+                                   start=0):
             
             self.learn_step += 1
-            state, action,next_state,reward,mask,exp=sample
+            state, action,next_state,reward,mask,exp = sample
             
             
             
             ####################
             #updata  actor
             ####################
-            new_action, log_prob= self.actorCritic.getAction(state)
+            new_action, log_prob= self.actor.get_action(state)
             
             if self.mp:
                 new_action_flat = new_action.flatten()
@@ -263,36 +261,36 @@ class agent(object):
                 column_indices = indices % self.action_dim
                 new_action_one_hot[indices, column_indices] = new_action_flat
 
-                state_for_one_hot = state.repeat(*([7] + [1] * (state.dim() - 1)))
-                new_q1, new_q2 = self.actorCritic.getQ(state_for_one_hot, new_action_one_hot)
+                state_for_one_hot = state.repeat(*([self.action_dim] + [1] * (state.dim() - 1)))
+                new_q1, new_q2 = self.critic.get_q(state_for_one_hot, new_action_one_hot)
                 
                 assert new_q1.shape == (state.shape[0] * self.action_dim, self.action_dim)
                 assert new_q2.shape == (state.shape[0] * self.action_dim, self.action_dim)
 
-                action_indices = torch.nonzero(new_action_one_hot, as_tuple=True)[1].view(-1, 1)
-                new_q1 = new_q1.gather(1, action_indices).view(state.shape[0], self.action_dim)
-                new_q2 = new_q2.gather(1, action_indices).view(state.shape[0], self.action_dim)
+                indices = (indices % 7).view(-1,1).to(self.device)
+                new_q1 = new_q1.gather(1, indices).view(state.shape[0], self.action_dim)
+                new_q2 = new_q2.gather(1, indices).view(state.shape[0], self.action_dim)
 
             else:
-                new_q1, new_q2 = self.actorCritic.getQ(state, new_action)
+                new_q1, new_q2 = self.critic.get_q(state, new_action)
             
             new_q = torch.min(new_q1,new_q2)
             actor_loss = (self.alpha*log_prob - new_q).mean()
             
             
-            self.actorCritic_o.zero_grad()
+            self.actor_optimizer.zero_grad()
             actor_loss.backward()
-            torch.nn.utils.clip_grad_norm_(self.actorCritic.parameters(), self.grad)
-            self.actorCritic_o.step()
+            torch.nn.utils.clip_grad_norm_(self.actor.parameters(), self.grad)
+            self.actor_optimizer.step()
             
             ####################
             #updata  Q
             ####################
-            q1,q2 = self.actorCritic.getQ(state,action)
+            q1,q2 = self.critic.get_q(state,action)
             
             with torch.no_grad():
-                next_action, log_next_prob= self.actorCritic.getAction(next_state)
-                target_q1,target_q2 = self.Q_target.getQ(next_state,next_action)
+                next_action, log_next_prob= self.actor.get_action(next_state)
+                target_q1,target_q2 = self.Q_target.get_q(next_state,next_action)
                 target_q = torch.min(target_q1,target_q2)
                 target_value = target_q - self.alpha * log_next_prob
                 next_q_value = reward + mask * (self.dicount**exp) * target_value
@@ -303,19 +301,20 @@ class agent(object):
             q2_loss = ((q2 - next_q_value)**2).mean()
             q_loss = q1_loss + q2_loss
             
-            self.actorCritic_o.zero_grad()
+            self.critic_optimizer.zero_grad()
             q_loss.backward()
-            torch.nn.utils.clip_grad_norm_(self.actorCritic.parameters(), self.grad)
-            self.actorCritic_o.step()
+            torch.nn.utils.clip_grad_norm_(self.critic.parameters(), self.grad)
+            self.critic_optimizer.step()
             
-            self.scheduler.step()
+            for scheduler in self.scheduler:
+                scheduler.step()
             
             
             ####################
             #soft updata  valuetarget
             ####################
             with torch.no_grad():
-                for target_param,param in zip(self.Q_target.parameters(),self.actorCritic.parameters()):
+                for target_param,param in zip(self.Q_target.parameters(),self.critic.parameters()):
                     target_param.data.copy_(
                     target_param.data *(1 - self.tau)  + param.data * self.tau
                 )
@@ -348,14 +347,16 @@ class agent(object):
     
     
     def save(self,filename):
-        torch.save(self.actorCritic.state_dict(),filename+"_actorCritic")
-        torch.save(self.actorCritic_o.state_dict(),filename+"_actorCritic_optim")
+        torch.save(self.actor.state_dict(),filename+"_actor")
+        torch.save(self.actor_optimizer.state_dict(),filename+"_actor_optimizer")
+        torch.save(self.critic.state_dict(),filename+"_critic")
+        torch.save(self.critic_optimizer.state_dict(),filename+"_critic_optimizer")
         
         
         
     def load(self,filename):
-        self.actorCritic.load_state_dict(torch.load(filename+"_actorCritic"))
-        # self.actorCritic_o.load_state_dict(torch.load(filename+"_actorCritic_optim"))
+        self.actor.load_state_dict(torch.load(filename+"_actor"))
+        # self.actor_optimizer.load_state_dict(torch.load(filename+"_actor_optimizer"))
         
     def IsCheckpoint(self,Score):
         if self.Maxscore<Score:

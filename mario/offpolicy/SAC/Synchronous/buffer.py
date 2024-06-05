@@ -82,81 +82,61 @@ class RolloutBuffer(object):
 
 
 class ReplayBuffer(object):
-    def __init__(self,max,num_processes,num_steps):
-        self.mem = []
-        self.memlen = 0
-        self.max = max
+    def __init__(self, maxs, num_processes, num_steps):
+        self.max = maxs
         self.numactor = num_processes
         self.rollout = num_steps
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.pos = 0
-        self.max_size = 0
-    
-    def push(self,data):
-        if len(self.mem)<self.max:
-            self.mem.append(data)
+        
+        # 分开存储各个属性
+        self.states = []
+        self.actions = []
+        self.masks = []
+        self.rewards = []
+        self.next_states = []
+        self.exps = []
+
+    def push(self, data):
+        state, action, next_state, reward, mask, exp = data
+        
+        if len(self.states) < self.max:
+            self.states.append(state)
+            self.actions.append(action)
+            self.masks.append(mask)
+            self.rewards.append(reward)
+            self.next_states.append(next_state)
+            self.exps.append(exp)
         else:
-            self.mem[int(self.pos)]=(data)
+            self.states[self.pos] = state
+            self.actions[self.pos] = action
+            self.masks[self.pos] = mask
+            self.rewards[self.pos] = reward
+            self.next_states[self.pos] = next_state
+            self.exps[self.pos] = exp
+
         self.pos = (self.pos + 1) % self.max
         
-        self.max_size = len(self.mem) * self.numactor * self.rollout
-        
-        
-    def PPOsample(self, num_mini_batch=40):
-        """
-        由于 PPO 是 on-policy 的，所以需要对整个回放池进行一次迭代，
-        但每次抽取的样本都是随机的且不放回的。
-        """
-        mini_batch_size = self.max_size // num_mini_batch
-        sampler = BatchSampler(SubsetRandomSampler(range(self.max_size)), mini_batch_size, drop_last=False)
 
-        # 提前从内存中提取所有数据
-        states, actions, log_probs, advantages, zs, returns = zip(*self.mem)
+    def sample(self, batch_size, num_epch_train):
+        
+        total_samples = batch_size * num_epch_train
+        inds = np.random.randint(0, len(self) * self.numactor * self.rollout, size=total_samples).reshape(num_epch_train, batch_size)
+        
+        for ind in inds:
+            state = np.array([self.states[i // (self.numactor * self.rollout)][i % (self.numactor * self.rollout)] for i in ind])
+            action = np.array([self.actions[i // (self.numactor * self.rollout)][i % (self.numactor * self.rollout)] for i in ind])
+            mask = np.array([self.masks[i // (self.numactor * self.rollout)][i % (self.numactor * self.rollout)] for i in ind])
+            reward = np.array([self.rewards[i // (self.numactor * self.rollout)][i % (self.numactor * self.rollout)] for i in ind])
+            next_state = np.array([self.next_states[i // (self.numactor * self.rollout)][i % (self.numactor * self.rollout)] for i in ind])
+            exp = np.array([self.exps[i // (self.numactor * self.rollout)][i % (self.numactor * self.rollout)] for i in ind])
 
-        for ind in sampler:
-            state = np.array([states[i // (self.numactor * self.rollout)][i % (self.numactor * self.rollout)] for i in ind])
-            action = np.array([actions[i // (self.numactor * self.rollout)][i % (self.numactor * self.rollout)] for i in ind])
-            action_log_prob = np.array([log_probs[i // (self.numactor * self.rollout)][i % (self.numactor * self.rollout)] for i in ind])
-            adv = np.array([advantages[i // (self.numactor * self.rollout)][i % (self.numactor * self.rollout)] for i in ind])
-            z = np.array([zs[i // (self.numactor * self.rollout)][i % (self.numactor * self.rollout)] for i in ind])
-            ret = np.array([returns[i // (self.numactor * self.rollout)][i % (self.numactor * self.rollout)] for i in ind])
-            
-            
             yield (torch.tensor(state).to(self.device), 
                    torch.tensor(action).to(self.device), 
-                   torch.tensor(action_log_prob).to(self.device),
-                   torch.tensor(ret).to(self.device),
-                   torch.tensor(adv).to(self.device),
-                   torch.tensor(z).to(self.device),
-                   )
-        
-    def sample(self, batch_size):
-        ind = np.random.randint(0, self.max_size, size=batch_size)
-        
-        state = np.empty((batch_size, *self.mem[0][0][0].shape), dtype=np.float32)
-        action = np.empty((batch_size, *self.mem[0][1][0].shape), dtype=np.float32)
-        mask = np.empty((batch_size, *self.mem[0][4][0].shape), dtype=np.float32)
-        reward = np.empty((batch_size,*self.mem[0][3][0].shape), dtype=np.float32)
-        next_state = np.empty((batch_size, *self.mem[0][2][0].shape), dtype=np.float32)
-        exp = np.empty((batch_size, *self.mem[0][5][0].shape), dtype=np.float32)
+                   torch.tensor(next_state).to(self.device),
+                   torch.tensor(reward).to(self.device),
+                   torch.tensor(mask).to(self.device),
+                   torch.tensor(exp).to(self.device))
 
-        for i in range(batch_size):
-            two = ind[i] % (self.numactor * self.rollout)
-            one = ind[i] // (self.numactor * self.rollout)
-            states, actions, next_states, rewards, masks, exps = self.mem[one]
-            state[i] = states[two]
-            action[i] = actions[two]
-            mask[i] = masks[two]
-            reward[i] = rewards[two]
-            next_state[i] = next_states[two]
-            exp[i] = exps[two]
-
-        return (torch.tensor(state).to(self.device), 
-                torch.tensor(action).to(self.device), 
-                torch.tensor(next_state).to(self.device),
-                torch.tensor(reward).to(self.device),
-                torch.tensor(mask).to(self.device),
-                torch.tensor(exp).to(self.device))
-    
     def __len__(self):
-        return len(self.mem)
+        return len(self.states)
