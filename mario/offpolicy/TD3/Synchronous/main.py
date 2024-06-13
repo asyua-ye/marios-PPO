@@ -130,8 +130,7 @@ def train_online(RL_agent, env, eval_env, rollout, hp):
             rounds += 1
             action = RL_agent.select_action(np.array(state))
             next_state, reward, ep_finished, _ = env.step(action)
-            if np.any(reward!=0):
-                episode_rewards += np.max(reward[reward != 0], axis=-1)
+            episode_rewards += np.max(reward, axis=-1)
             next_mask =  1. - ep_finished.astype(np.float32)
             final_rewards *= next_mask
             final_rewards += (1. - next_mask) * episode_rewards

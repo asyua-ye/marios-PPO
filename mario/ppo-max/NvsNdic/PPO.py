@@ -51,13 +51,12 @@ class CNN(nn.Module):
                 
 
 class Actor(nn.Module):
-    def __init__(self, cnn, action_dim,ppg=False,log_std_min=-20,log_std_max=2):
+    def __init__(self, cnn, action_dim,ppg=False,threshold=0.5):
         super(Actor, self).__init__()
         
         self.cnn = cnn
         self.action_dim = action_dim
-        self.log_std_min = log_std_min
-        self.log_std_max = log_std_max
+        self.threshold = threshold
         self.ppg = ppg
         self.fc1 = nn.Linear(self.cnn.feature_size, 512)
         self.fc1_1 = nn.Linear(512, 512)
@@ -77,24 +76,26 @@ class Actor(nn.Module):
         return mean
     
     def get_action(self, state, deterministic=False):
-        logits = self.forward(state)
-        dist = torch.distributions.Categorical(logits=logits)
-        log_probs = F.log_softmax(logits, dim=1)
-        action = dist.sample().view(-1, 1)
-        action_log_probs = log_probs.gather(1, action.long())
-        
-        return action,action_log_probs
+        logits = self.forward(state) 
+        probabilities = torch.sigmoid(logits)
+        if deterministic:
+            action = (probabilities >= self.threshold).int()
+        else:
+            action = torch.bernoulli(probabilities).int()
+        action_log_probs = torch.log(probabilities * action + (1 - probabilities) * (1 - action))
+        return action, action_log_probs
     
-    def getLogprob(self,state,action):
-        
-        logits = self.forward(state)
-        
-        dist = torch.distributions.Categorical(logits=logits)
-        log_probs = F.log_softmax(logits, dim=1)
-        old_logprob = log_probs.gather(1, action.long())
-        distentroy = dist.entropy().mean()
-        
-        return old_logprob,distentroy
+    def getLogprob(self, state, old_action):
+        logits = self.forward(state) 
+        probabilities = torch.sigmoid(logits)
+
+        old_logprob = torch.log(probabilities * old_action + (1 - probabilities) * (1 - old_action) + 1e-6)
+        # old_logprob = old_logprob.sum(dim=1)
+
+        distentropy = - (probabilities * torch.log(probabilities + 1e-6) + (1 - probabilities) * torch.log(1 - probabilities + 1e-6))
+        distentropy = distentropy.mean() 
+
+        return old_logprob, distentropy
     
     def _initialize_weights(self):
         
@@ -161,7 +162,7 @@ class agent(object):
         self.action_dim = action_dim
         
         cnn_net = CNN(state_dim)
-        self.actor = Actor(cnn_net,self.action_dim,hp.ppg,hp.log_std_min,hp.log_std_max).to(self.device)
+        self.actor = Actor(cnn_net,self.action_dim,hp.ppg,hp.threshold).to(self.device)
         self.critic = Critic(cnn_net).to(self.device)
         self.Q_target = copy.deepcopy(self.critic)
         
@@ -197,8 +198,8 @@ class agent(object):
             state = torch.FloatTensor(state.reshape(-1, *state.shape)).squeeze().to(self.device)
         action,logprob = self.actor.get_action(state,deterministic)
         value = self.critic.getValue(state)
-        action = action.view(-1,1).cpu().data.numpy()
-        logprob = logprob.view(-1,1).cpu().data.numpy()
+        action = action.view(-1,self.action_dim).cpu().data.numpy()
+        logprob = logprob.view(-1,self.action_dim).cpu().data.numpy()
         value = value.view(-1,1).cpu().data.numpy()
         
         return action,logprob,value

@@ -8,19 +8,19 @@ class RolloutBuffer(object):
     def __init__(self, num_steps, num_processes, state_dim, action_dim, gae, discount):
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.states = torch.zeros((num_steps, num_processes,) + state_dim).to(device)
-        self.rewards = torch.zeros(num_steps, num_processes, 1).to(device)
+        self.rewards = torch.zeros(num_steps, num_processes, action_dim).to(device)
         self.values = torch.zeros(num_steps, num_processes, 1).to(device)
-        self.returns = torch.zeros(num_steps, num_processes, 1).to(device)
-        self.action_log_probs = torch.zeros(num_steps, num_processes, 1).to(device)
-        self.actions = torch.zeros(num_steps, num_processes, 1).to(device, torch.long)
+        self.returns = torch.zeros(num_steps, num_processes, action_dim).to(device)
+        self.action_log_probs = torch.zeros(num_steps, num_processes, action_dim).to(device)
+        self.actions = torch.zeros(num_steps, num_processes, action_dim).to(device, torch.long)
         self.masks = torch.ones(num_steps , num_processes, 1).to(device)
-        self.adv = torch.zeros(num_steps, num_processes, 1).to(device)
+        self.adv = torch.zeros(num_steps, num_processes, action_dim).to(device)
         self.gae_tau = gae
         self.discount = discount
         self.num_steps = num_steps
         self.step = 0
-        self.rewards_norm = RunningMeanStd(1)
-        self.R = torch.zeros(num_processes,1).to(device)
+        self.rewards_norm = RunningMeanStd(action_dim)
+        self.R = torch.zeros(num_processes,action_dim).to(device)
         
         
     def scale(self,x,x_norm,mask):
@@ -72,10 +72,10 @@ class RolloutBuffer(object):
             torch.std(self.adv) + 1e-5)
         
         state=self.states.view(-1,*self.states.size()[2:]).cpu().data.numpy()
-        action=self.actions.view(-1, 1).cpu().data.numpy()
-        action_log_probs=self.action_log_probs.view(-1,1).cpu().data.numpy()
-        adv = self.adv.view(-1,1).cpu().data.numpy()
-        returns = self.returns.view(-1,1).cpu().data.numpy()
+        action=self.actions.view(-1, self.actions.size(-1)).cpu().data.numpy()
+        action_log_probs=self.action_log_probs.view(-1,self.actions.size(-1)).cpu().data.numpy()
+        adv = self.adv.view(-1,self.actions.size(-1)).cpu().data.numpy()
+        returns = self.returns.view(-1,self.actions.size(-1)).cpu().data.numpy()
         
         return (state,action,action_log_probs,adv,returns)
 

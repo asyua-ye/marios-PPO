@@ -76,8 +76,8 @@ class Actor(nn.Module):
         x = self.cnn(x)
         if self.ppg:
             x = x.detach()
-        x_actor = F.relu(self.fc1(x))
-        x_actor = F.relu(self.fc1_1(x_actor))
+        x_actor = F.tanh(self.fc1(x))
+        x_actor = F.tanh(self.fc1_1(x_actor))
         mean = self.mean_linear(x_actor)
         
         if not self.std:
@@ -144,12 +144,12 @@ class Critic(nn.Module):
     def forward(self, x, action):
         x = self.cnn(x)
         sa = torch.cat([x, action], 1)
-        q1 = F.relu(self.fc1_1(sa))
-        q1 = F.relu(self.fc1_1_1(q1))
+        q1 = F.tanh(self.fc1_1(sa))
+        q1 = F.tanh(self.fc1_1_1(q1))
         q1 = self.q1(q1)
         
-        q2 = F.relu(self.fc1_2(sa))
-        q2 = F.relu(self.fc1_2_1(q2))
+        q2 = F.tanh(self.fc1_2(sa))
+        q2 = F.tanh(self.fc1_2_1(q2))
         q2 = self.q2(q2)
         
         return q1, q2

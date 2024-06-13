@@ -3,9 +3,23 @@ import gymnasium as gym
 import cv2
 cv2.ocl.setUseOpenCL(False)
 from gymnasium.spaces import Box
-from nes_py.wrappers import JoypadSpace
+from utils.joypad_space import myJoypadSpace
 from gymnasium.wrappers import FrameStack
 from gym_super_mario_bros.actions import SIMPLE_MOVEMENT,COMPLEX_MOVEMENT,RIGHT_ONLY
+
+
+
+
+MYACTION = [
+    ['NOOP'],
+    ['right'],
+    ['left'],
+    ['down'],
+    ['up'],
+    ['A'],
+    ['B']
+]
+
 
 
 def Reward(info,reward,old_info,done):
@@ -44,20 +58,31 @@ class SkipFrame(gym.Wrapper):
         super().__init__(env)
         self._skip = skip
         self.old_info = None
+        self.action_dim = env.action_space.n
 
     def step(self, action):
-        """Repeat action, and sum reward"""
-        total_reward = 0.0
+        """
+        action.shape:[numprocess,actiondim]
+        many-hot:[0,0,1,0,1,0]
+        """
+        total_reward = np.zeros(self.action_dim)
+        
+        a = np.nonzero(action)[0]
+        if len(a)!=0:
+            real_a = [MYACTION[i] for i in a]
+        else:
+            real_a = [['NOOP']]
+        
         for i in range(self._skip):
             # Accumulate reward and repeat the same action
-            obs, reward, done, trunk, info = self.env.step(action)
+            obs, reward, done, trunk, info = self.env.step(real_a)
             
             if self.old_info is None:
                 self.old_info = info
             reward = Reward(info,reward,self.old_info,done)
             self.old_info = info
             
-            total_reward += reward
+            total_reward[a] += reward
             if done:
                 self.old_info = None
                 break
@@ -132,7 +157,7 @@ class ScaledFloatFrame(gym.ObservationWrapper):
     
     
 def ProcessEnv(env):
-    env = JoypadSpace(env, SIMPLE_MOVEMENT)
+    env = myJoypadSpace(env, MYACTION)
     env = SkipFrame(env, skip=4)
     env = WarpFrame(env)
     env = ScaledFloatFrame(env)

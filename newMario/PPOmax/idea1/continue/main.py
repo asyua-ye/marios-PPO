@@ -6,7 +6,7 @@ import argparse
 import os
 import time
 import datetime
-import SAC
+import PPO
 from utils.tool import DataProcessor,log_and_print
 from buffer import RolloutBuffer
 from pre_env import ProcessEnv
@@ -38,12 +38,12 @@ env = gym_super_mario_bros.make(args.env, render_mode='human', apply_api_compati
 @dataclass
 class Hyperparameters:
     # Generic
-    buffer_size: int = 20
+    buffer_size: int = 1
     discount: float = 0.6
     gae: float = 0.2
-    grad: float = 1.0
+    grad: float = 0.5
     num_processes: int = 8
-    num_steps: int = 100#1280
+    num_steps: int = 600
     device: torch.device = None
     max_steps: int = 0
     
@@ -55,24 +55,20 @@ class Hyperparameters:
     eps: float = 1e-5
     std: bool = False
     ppg: bool = True
-    MP: bool = True
+    share: bool = True
     
     # Critic
     critic_lr: float = 3e-4
     
-    # SAC
-    batch: int = 256
-    num_epch_train: int = int(5e2)
-    adaptive_alpha: bool = False
-    alpha: float = 0.2
-    tau: float = 5e-3
-    priority = True
+    # PPO
+    clip: float = 0.2
+    ppo_update: int = 25
+    mini_batch: int = 40
+    value: float = 0.5
+    actor: float = 1.0
     
-    # LAP
-    min_priority: int = 1
-    LAPalpha: float = 0.6
-    LAPbeta = 0.4
-    
+    #goal
+    g = 0.1
     
     # RL
     env: str = "SuperMarioBros-1-1-v0"
@@ -103,15 +99,15 @@ def train_online(RL_agent, env, eval_env, rollout, hp):
     """
     不考虑单进程的情况了
     
-    
     """
-    state,mask = env.reset(),torch.ones((hp.num_processes,1)).to(hp.device)
+    state = env.reset()
     episode_rewards = np.zeros(hp.num_processes, dtype=np.float64)
     final_rewards = np.zeros(hp.num_processes, dtype=np.float64)
     rounds = np.zeros(hp.num_processes, dtype=np.float64)
+    rds = 0
     start_time = time.time()
     file_time = datetime.datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
-    writer = SummaryWriter(f'./{hp.file_name}/output/{file_time}/{file_time}-SAC-{hp.max_timesteps}')
+    writer = SummaryWriter(f'./{hp.file_name}/output/{file_time}/{file_time}-PPO-{hp.max_timesteps}')
     if hp.checkpoint and not os.path.exists(f"./{hp.file_name}/output/{file_time}/checkpoint/models"):
         os.makedirs(f"./{hp.file_name}/output/{file_time}/checkpoint/models")
     train = []
@@ -123,50 +119,53 @@ def train_online(RL_agent, env, eval_env, rollout, hp):
     process = DataProcessor(f'./{hp.file_name}/output/{file_time}/')
     
     for t in range(int(hp.max_timesteps+1)):
-        
         s1 = time.time()
         for step in range(hp.num_steps):
             rounds += 1
-            action = RL_agent.select_action(np.array(state))
+            action,logit,value,z = RL_agent.select_action(np.array(state))
             next_state, reward, ep_finished, _ = env.step(action)
             
             episode_rewards += np.max(reward, axis=-1)
-            next_mask =  1. - ep_finished.astype(np.float32)
-            final_rewards *= next_mask
-            final_rewards += (1. - next_mask) * episode_rewards
-            episode_rewards *= next_mask
-            
+            mask =  1. - ep_finished.astype(np.float32)
+            final_rewards *= mask
+            final_rewards += (1. - mask) * episode_rewards
+            round_rwards = np.copy(episode_rewards)
+            episode_rewards *= mask
+            rds += np.sum(ep_finished==1)
             reward = torch.from_numpy(reward.astype(np.float32)).to(hp.device)
-            next_mask = torch.from_numpy(next_mask).to(hp.device).view(-1, 1)
+            mask = torch.from_numpy(mask).to(hp.device).view(-1, 1)
             state = torch.from_numpy(state.astype(np.float64)).to(hp.device)
             action = torch.from_numpy(action.astype(np.float64)).to(hp.device)
-                       
-            rollout.insert(state, action, reward, mask)
+            logit = torch.from_numpy(logit).to(hp.device)
+            value = torch.from_numpy(value).to(hp.device)
+            z = torch.from_numpy(z).to(hp.device)
+            rollout.insert(state, action,logit, value, reward, mask, z, round_rwards)
             state = next_state
-            mask = next_mask
             if torch.any(mask == 0).item() and np.any(final_rewards != 0):
                 non_zero_rewards = final_rewards[final_rewards != 0]
                 log_and_print(train, (
-                    f"T: {t} Total T: {np.sum(rounds)}  mean: {np.mean(non_zero_rewards):.3f} "
+                    f"T: {t} Total T: {np.sum(rounds)} Total R: {rds}  mean: {np.mean(non_zero_rewards):.3f} "
                     f"mid: {np.median(non_zero_rewards):.3f} max: {np.max(non_zero_rewards):.3f} "
                     f"min: {np.min(non_zero_rewards):.3f}"
                         ))
+            
         e = time.time()
         sample_time = (e-s1)
         log_and_print(train, f"Total time passed: {round((time.time()-start_time)/60.,2)} min(s)")
         s = time.time()
-        rollout.lastInsert(torch.from_numpy(next_state.astype(np.float64)).to(hp.device),next_mask)
-        states,actions,next_states,rewards,masks,exps = rollout.computeReturn()
-        data=(np.copy(states), np.copy(actions),np.copy(next_states), np.copy(rewards),np.copy(masks),np.copy(exps))
+        next_value = RL_agent.get_value(np.array(next_state))
+        next_value = torch.from_numpy(next_value).view(-1,1).to(hp.device)
+        states,actions,action_log_probs,advs,zs,returns,rouds = rollout.computeReturn(next_value,mask)
+        data=(np.copy(states), np.copy(actions),np.copy(action_log_probs), np.copy(advs),np.copy(zs),
+              np.copy(returns),np.copy(rouds))
         RL_agent.replaybuffer.push(data)
-        log_and_print(train, f"T: {t}   sample end begintrain！！")
+        log_and_print(train, f"T: {t}  R: {rds}   sample end begintrain！！")
         RL_agent.train(process,writer)
         e = time.time()
         train_time = (e-s)   
-        evals = []
         if hp.checkpoint:
             s = time.time()
-            text,total_reward = maybe_evaluate_and_print(RL_agent, eval_env, evals, t, start_time,file_time, hp)
+            text,total_reward = maybe_evaluate_and_print(RL_agent, eval_env, t, start_time,file_time, hp)
             e = time.time()
             eval_time = (e-s)
             train.extend(text)
@@ -183,6 +182,7 @@ def train_online(RL_agent, env, eval_env, rollout, hp):
         process.write_to_excel()
         
     env.close()
+    eval_envs.close()
     file_time1 = datetime.datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
     log_and_print(train, f"\nend time: {file_time1}")
     np.savetxt(f"./{hp.file_name}/output/{file_time}/train.txt", train, fmt='%s')
@@ -194,43 +194,48 @@ def toTest(RL_agent, env, eval_env,file_name, hp):
     start_time = time.time()
     file_time = None
     for t in range(hp.eval):
-        maybe_evaluate_and_print(RL_agent, eval_env, evals, t, start_time,file_time, hp)
+        maybe_evaluate_and_print(RL_agent, eval_env, t, start_time,file_time, hp)
     
     
             
-def maybe_evaluate_and_print(RL_agent, eval_env, evals, t, start_time,file_time, hp, d4rl=False):
+def maybe_evaluate_and_print(RL_agent, eval_env, t, start_time,file_time, hp, d4rl=False):
     
     text = []
     if hp.checkpoint or hp.test:
         log_and_print(text, "---------------------------------------")
         log_and_print(text, f"Evaluation at {t} time steps")
         log_and_print(text, f"Total time passed: {round((time.time() - start_time) / 60., 2)} min(s)")
-
-        total_reward = np.zeros(hp.eval_eps)
-        for ep in range(hp.eval_eps):
-            state, done = eval_env.reset(), False
-            state = state[0]
-            while not done:
-                action = RL_agent.select_action(np.array(state))
-                next_state, reward, done, _, _ = eval_env.step(action)
-                total_reward[ep] += np.max(reward)
-                state = next_state
-                
-        log_and_print(text, f"Average total reward over {hp.eval_eps} episodes: {total_reward.mean():.3f}")
+        
+        total_reward = []
+        state = eval_env.reset()
+        episode_rewards = np.zeros(hp.num_processes, dtype=np.float64)
+        final_rewards = np.zeros(hp.num_processes, dtype=np.float64)
+             
+        while True:
+            action,_,_,_ = RL_agent.select_action(np.array(state))
+            next_state, reward, done, _ = eval_env.step(action)
+            state = next_state
+            episode_rewards += np.max(reward, axis=-1)
+            mask =  1. - done.astype(np.float32)
+            final_rewards *= mask
+            final_rewards += (1. - mask) * episode_rewards
+            episode_rewards *= mask
+            if np.any(done==1):
+                total_reward.extend(final_rewards[final_rewards!=0])
+                final_rewards[final_rewards!=0] = 0
+            if len(total_reward)>=hp.eval_eps:
+                break
+        log_and_print(text, f"Average total reward over {hp.eval_eps} episodes: {np.mean(total_reward):.3f}")
         if d4rl:
             total_reward = eval_env.get_normalized_score(total_reward) * 100
             log_and_print(text, f"D4RL score: {total_reward.mean():.3f}")
-        evals.append(total_reward)
-        
+            
         if hp.checkpoint and not hp.test:
-            np.save(f"./{hp.file_name}/output/{file_time}/checkpoint/{hp.file_name}", evals)
             score = np.mean(total_reward) + np.min(total_reward) + np.max(total_reward) + np.median(total_reward) - np.std(total_reward)
             flag = RL_agent.IsCheckpoint(score)
             log_and_print(text, f"This Score：{score} Max Score:{RL_agent.Maxscore}")
             if flag:
                 RL_agent.save(f"./{hp.file_name}/output/{file_time}/checkpoint/models/")
-        if hp.test:
-            np.save(f"./{hp.file_name}/output/{file_time}/evals", evals)
         log_and_print(text, "---------------------------------------")
         return text,total_reward
 
@@ -245,8 +250,8 @@ if __name__ == "__main__":
 
     # Evaluation
     parser.add_argument("--checkpoint", default=True, action=argparse.BooleanOptionalAction)
-    parser.add_argument("--eval_eps", default=2, type=int)
-    parser.add_argument("--max_timesteps", default=1000, type=int)
+    parser.add_argument("--eval_eps", default=2, type=int) #eval_eps*numproess
+    parser.add_argument("--max_timesteps", default=200, type=int)
     parser.add_argument("--eval",default=1,type=int)
     # File
     parser.add_argument('--file_name', default=None)
@@ -278,7 +283,7 @@ if __name__ == "__main__":
     
 
     print("---------------------------------------")
-    print(f"Algorithm: SAC, Env: {args.env}, Seed: {args.seed}")
+    print(f"Algorithm: PPO, Env: {args.env}, Seed: {args.seed}")
     print("---------------------------------------")
 
 
@@ -300,29 +305,28 @@ if __name__ == "__main__":
         eval=args.eval,
         file_name=args.file_name
     )
-    hp.max_steps = hp.max_timesteps * hp.num_epch_train
+    hp.max_steps = hp.max_timesteps * hp.ppo_update * hp.mini_batch
+    hp.eval_eps = args.eval_eps * hp.num_processes
     
     state_dim = env.observation_space.shape
     action_dim = env.action_space.shape[0]
     max_action = float(env.action_space.high[0])
     
     
-    envs=SubprocVecEnv(hp.num_processes,hp) if hp.num_processes > 1 else env
+    envs = SubprocVecEnv(hp.num_processes,hp) if hp.num_processes > 1 else env
+    eval_envs = SubprocVecEnv(hp.num_processes,hp) if hp.num_processes > 1 else eval_env
     
+    RL_agent = PPO.agent(state_dim, action_dim, max_action, hp)
     
-    RL_agent = SAC.agent(state_dim, action_dim, max_action, hp)
-    
-    rollout = RolloutBuffer(hp.num_steps, hp.num_processes, state_dim, action_dim, hp.discount)
+    rollout = RolloutBuffer(hp.num_steps, hp.num_processes, state_dim, action_dim, hp.gae, hp.discount)
         
-    torch.autograd.set_detect_anomaly(True)
-    
-    
+
     if args.test:
         file_name = f''
         toTest(RL_agent, env, eval_env,file_name, hp)
     else:
         from torch.utils.tensorboard import SummaryWriter
-        train_online(RL_agent, envs, eval_env, rollout, hp)
+        train_online(RL_agent, envs, eval_envs, rollout, hp)
 
 
 

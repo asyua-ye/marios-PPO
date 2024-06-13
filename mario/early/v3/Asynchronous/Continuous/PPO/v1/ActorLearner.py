@@ -68,8 +68,7 @@ def actor(hp, replaybuffer, event, counter):
                 rounds += 1
                 action, logit, value, z = RL_agent.select_action(np.array(state))
                 next_state, reward, ep_finished, _ = env.step(action)
-                if np.any(reward != 0):
-                    episode_rewards += np.max(reward[reward != 0], axis=-1)
+                episode_rewards += reward
                 mask = 1. - ep_finished.astype(np.float32)
                 final_rewards *= mask
                 final_rewards += (1. - mask) * episode_rewards

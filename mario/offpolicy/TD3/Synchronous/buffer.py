@@ -133,8 +133,13 @@ class ReplayBuffer(object):
         self.priorities_updated = True
 
         if self.prioritized:
-            self.ptr = (self.ptr + state.shape[0]) % self.size
-            self.priority[self.ptr - state.shape[0]:self.ptr] = self.max_priority
+            self.ptr = (self.ptr + state.shape[0] ) % self.size
+            start_index = self.ptr - state.shape[0]
+            if start_index < 0:
+                self.priority[start_index:] = self.max_priority
+                self.priority[:self.ptr] = self.max_priority
+            else:
+                self.priority[start_index:self.ptr] = self.max_priority
 
 
     def sample(self, batch_size, num_epoch_train):

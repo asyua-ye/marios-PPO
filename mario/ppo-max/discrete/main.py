@@ -42,8 +42,8 @@ class Hyperparameters:
     discount: float = 0.9
     gae: float = 1.0
     grad: float = 0.5
-    num_processes: int = 8
-    num_steps: int = 10240
+    num_processes: int = 4
+    num_steps: int = 2560
     device: torch.device = None
     max_steps: int = 0
     
@@ -102,6 +102,7 @@ def train_online(RL_agent, env, eval_env, rollout, hp):
     episode_rewards = np.zeros(hp.num_processes, dtype=np.float64)
     final_rewards = np.zeros(hp.num_processes, dtype=np.float64)
     rounds = np.zeros(hp.num_processes, dtype=np.float64)
+    rds = 0
     start_time = time.time()
     file_time = datetime.datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
     writer = SummaryWriter(f'./{hp.file_name}/output/{file_time}/{file_time}-PPO-{hp.max_timesteps}')
@@ -122,12 +123,14 @@ def train_online(RL_agent, env, eval_env, rollout, hp):
             rounds += 1
             action,logit,value = RL_agent.select_action(np.array(state))
             next_state, reward, ep_finished, _ = env.step(action)
-            if np.any(reward!=0):
-                episode_rewards += np.max(reward[reward != 0], axis=-1)
+            
+            episode_rewards += reward
             mask =  1. - ep_finished.astype(np.float32)
             final_rewards *= mask
             final_rewards += (1. - mask) * episode_rewards
             episode_rewards *= mask
+            rds += np.sum(ep_finished==1)
+            
             
             reward = torch.from_numpy(reward.astype(np.float32)).to(hp.device)
             mask = torch.from_numpy(mask).to(hp.device).view(-1, 1)
@@ -141,7 +144,7 @@ def train_online(RL_agent, env, eval_env, rollout, hp):
             if torch.any(mask == 0).item() and np.any(final_rewards != 0):
                 non_zero_rewards = final_rewards[final_rewards != 0]
                 log_and_print(train, (
-                    f"T: {t} Total T: {np.sum(rounds)}  mean: {np.mean(non_zero_rewards):.3f} "
+                    f"T: {t} Total T: {np.sum(rounds)} Total R: {rds}  mean: {np.mean(non_zero_rewards):.3f} "
                     f"mid: {np.median(non_zero_rewards):.3f} max: {np.max(non_zero_rewards):.3f} "
                     f"min: {np.min(non_zero_rewards):.3f}"
                         ))
@@ -154,14 +157,13 @@ def train_online(RL_agent, env, eval_env, rollout, hp):
         states,actions,action_log_probs,advs,returns = rollout.computeReturn(next_value,mask)
         data=(np.copy(states), np.copy(actions),np.copy(action_log_probs), np.copy(advs),np.copy(returns))
         RL_agent.replaybuffer.push(data)
-        log_and_print(train, f"T: {t}   sample end begintrain！！")
+        log_and_print(train, f"T: {t}  R: {rds}   sample end begintrain！！")
         RL_agent.train(process,writer)
         e = time.time()
         train_time = (e-s)   
-        evals = []
         if hp.checkpoint:
             s = time.time()
-            text,total_reward = maybe_evaluate_and_print(RL_agent, eval_env, evals, t, start_time,file_time, hp)
+            text,total_reward = maybe_evaluate_and_print(RL_agent, eval_env, t, start_time,file_time, hp)
             e = time.time()
             eval_time = (e-s)
             train.extend(text)
@@ -193,39 +195,44 @@ def toTest(RL_agent, env, eval_env,file_name, hp):
     
     
             
-def maybe_evaluate_and_print(RL_agent, eval_env, evals, t, start_time,file_time, hp, d4rl=False):
+def maybe_evaluate_and_print(RL_agent, eval_env, t, start_time,file_time, hp, d4rl=False):
     
     text = []
     if hp.checkpoint or hp.test:
         log_and_print(text, "---------------------------------------")
         log_and_print(text, f"Evaluation at {t} time steps")
         log_and_print(text, f"Total time passed: {round((time.time() - start_time) / 60., 2)} min(s)")
-
-        total_reward = np.zeros(hp.eval_eps)
-        for ep in range(hp.eval_eps):
-            state, done = eval_env.reset(), False
-            state = state[0]
-            while not done:
-                action,_,_ = RL_agent.select_action(np.array(state))
-                next_state, reward, done, _, _ = eval_env.step(action[0][0])
-                total_reward[ep] += np.max(reward)
-                state = next_state
-                
-        log_and_print(text, f"Average total reward over {hp.eval_eps} episodes: {total_reward.mean():.3f}")
+        
+        total_reward = []
+        state = eval_env.reset()
+        episode_rewards = np.zeros(hp.num_processes, dtype=np.float64)
+        final_rewards = np.zeros(hp.num_processes, dtype=np.float64)
+             
+        while True:
+            action,_,_ = RL_agent.select_action(np.array(state))
+            next_state, reward, done, _ = eval_env.step(action)
+            state = next_state
+            episode_rewards += np.max(reward, axis=-1)
+            mask =  1. - done.astype(np.float32)
+            final_rewards *= mask
+            final_rewards += (1. - mask) * episode_rewards
+            episode_rewards *= mask
+            if np.any(done==1):
+                total_reward.extend(final_rewards[final_rewards!=0])
+                final_rewards[final_rewards!=0] = 0
+            if len(total_reward)>=hp.eval_eps:
+                break
+        log_and_print(text, f"Average total reward over {hp.eval_eps} episodes: {np.mean(total_reward):.3f}")
         if d4rl:
             total_reward = eval_env.get_normalized_score(total_reward) * 100
             log_and_print(text, f"D4RL score: {total_reward.mean():.3f}")
-        evals.append(total_reward)
-        
+            
         if hp.checkpoint and not hp.test:
-            np.save(f"./{hp.file_name}/output/{file_time}/checkpoint/{hp.file_name}", evals)
             score = np.mean(total_reward) + np.min(total_reward) + np.max(total_reward) + np.median(total_reward) - np.std(total_reward)
             flag = RL_agent.IsCheckpoint(score)
             log_and_print(text, f"This Score：{score} Max Score:{RL_agent.Maxscore}")
             if flag:
                 RL_agent.save(f"./{hp.file_name}/output/{file_time}/checkpoint/models/")
-        if hp.test:
-            np.save(f"./{hp.file_name}/output/{file_time}/evals", evals)
         log_and_print(text, "---------------------------------------")
         return text,total_reward
 
@@ -240,7 +247,7 @@ if __name__ == "__main__":
 
     # Evaluation
     parser.add_argument("--checkpoint", default=True, action=argparse.BooleanOptionalAction)
-    parser.add_argument("--eval_eps", default=3, type=int)
+    parser.add_argument("--eval_eps", default=7, type=int)
     parser.add_argument("--max_timesteps", default=1000, type=int)
     parser.add_argument("--eval",default=1,type=int)
     # File
@@ -296,13 +303,13 @@ if __name__ == "__main__":
         file_name=args.file_name
     )
     hp.max_steps = hp.max_timesteps * hp.ppo_update * hp.mini_batch
-    
+    hp.eval_eps = args.eval_eps * hp.num_processes
     state_dim = env.observation_space.shape
     action_dim = env.action_space.n
     
     
-    envs=SubprocVecEnv(hp.num_processes,hp) if hp.num_processes > 1 else env
-    
+    envs = SubprocVecEnv(hp.num_processes,hp) if hp.num_processes > 1 else env
+    eval_envs = SubprocVecEnv(hp.num_processes,hp) if hp.num_processes > 1 else eval_env
     
     RL_agent = PPO.agent(state_dim, action_dim, hp)
     
@@ -314,7 +321,7 @@ if __name__ == "__main__":
         toTest(RL_agent, env, eval_env,file_name, hp)
     else:
         from torch.utils.tensorboard import SummaryWriter
-        train_online(RL_agent, envs, eval_env, rollout, hp)
+        train_online(RL_agent, envs, eval_envs, rollout, hp)
 
 
 
