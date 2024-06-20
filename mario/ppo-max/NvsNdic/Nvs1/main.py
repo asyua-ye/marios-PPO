@@ -42,7 +42,7 @@ class Hyperparameters:
     discount: float = 0.9
     gae: float = 1.0
     grad: float = 0.5
-    num_processes: int = 4
+    num_processes: int = 1
     num_steps: int = 2560
     device: torch.device = None
     max_steps: int = 0
@@ -106,16 +106,16 @@ def train_online(RL_agent, env, eval_env, rollout, hp):
     rds = 0
     start_time = time.time()
     file_time = datetime.datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
-    writer = SummaryWriter(f'./{hp.file_name}/output/{file_time}/{file_time}-PPO-{hp.max_timesteps}')
-    if hp.checkpoint and not os.path.exists(f"./{hp.file_name}/output/{file_time}/checkpoint/models"):
-        os.makedirs(f"./{hp.file_name}/output/{file_time}/checkpoint/models")
+    writer = SummaryWriter(f'./output/{hp.file_name}/{file_time}/{file_time}-PPO-{hp.max_timesteps}')
+    if hp.checkpoint and not os.path.exists(f"./output/{hp.file_name}/{file_time}/checkpoint/models"):
+        os.makedirs(f"./output/{hp.file_name}/{file_time}/checkpoint/models")
     train = []
     log_and_print(train, (f"begin time:  {file_time}\n"))
-    if not os.path.exists(f"./{hp.file_name}/output/{file_time}/models/"):
-        output_directory = f'./{hp.file_name}/output/{file_time}/models/'
+    if not os.path.exists(f"./output/{hp.file_name}/{file_time}/models/"):
+        output_directory = f'./output/{hp.file_name}/{file_time}/models/'
         os.makedirs(output_directory)
         hp.save_to_file(os.path.join(output_directory, 'hyperparameters.txt'))
-    process = DataProcessor(f'./{hp.file_name}/output/{file_time}/')
+    process = DataProcessor(f'./output/{hp.file_name}/{file_time}/')
     
     for t in range(int(hp.max_timesteps+1)):
         
@@ -125,7 +125,7 @@ def train_online(RL_agent, env, eval_env, rollout, hp):
             action,logit,value = RL_agent.select_action(np.array(state))
             next_state, reward, ep_finished, _ = env.step(action)
             
-            episode_rewards += np.max(reward, axis=-1)
+            episode_rewards += reward
             mask =  1. - ep_finished.astype(np.float32)
             final_rewards *= mask
             final_rewards += (1. - mask) * episode_rewards
@@ -169,8 +169,8 @@ def train_online(RL_agent, env, eval_env, rollout, hp):
             eval_time = (e-s)
             train.extend(text)
             process.process_input(total_reward,'Returns','eval/')
-        np.savetxt(f"./{hp.file_name}/output/{file_time}/train.txt", train, fmt='%s')
-        RL_agent.save(f'./{hp.file_name}/output/{file_time}/models/')
+        np.savetxt(f"./output/{hp.file_name}/{file_time}/train.txt", train, fmt='%s')
+        RL_agent.save(f'./output/{hp.file_name}/{file_time}/models/')
         process.process_input(sample_time,'sample_time(s)','time/')
         process.process_input(train_time,'train_time','time/')
         process.process_input(eval_time,'eval_time(s)','time/')
@@ -181,18 +181,19 @@ def train_online(RL_agent, env, eval_env, rollout, hp):
         process.write_to_excel()
         
     env.close()
+    eval_env.close()
     file_time1 = datetime.datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
     log_and_print(train, f"\nend time: {file_time1}")
-    np.savetxt(f"./{hp.file_name}/output/{file_time}/train.txt", train, fmt='%s')
+    np.savetxt(f"./output/{hp.file_name}/{file_time}/train.txt", train, fmt='%s')
             
             
 def toTest(RL_agent, env, eval_env,file_name, hp):
-    RL_agent.load(f"./models/")
-    evals = []
+    RL_agent.load(file_name)
     start_time = time.time()
     file_time = None
     for t in range(hp.eval):
-        maybe_evaluate_and_print(RL_agent, eval_env, evals, t, start_time,file_time, hp)
+        maybe_evaluate_and_print(RL_agent, eval_env, t, start_time,file_time, hp)
+    eval_env.close()
     
     
             
@@ -206,21 +207,28 @@ def maybe_evaluate_and_print(RL_agent, eval_env, t, start_time,file_time, hp, d4
         
         total_reward = []
         state = eval_env.reset()
+        state = state[0]
         episode_rewards = np.zeros(hp.num_processes, dtype=np.float64)
         final_rewards = np.zeros(hp.num_processes, dtype=np.float64)
              
         while True:
             action,_,_ = RL_agent.select_action(np.array(state))
-            next_state, reward, done, _ = eval_env.step(action)
+            # next_state, reward, done, _ = eval_env.step(action)
+            action = action[0]
+            next_state, reward, done, _, _ = eval_env.step(action)
             state = next_state
-            episode_rewards += np.max(reward, axis=-1)
-            mask =  1. - done.astype(np.float32)
+            episode_rewards += reward
+            # mask =  1. - done.astype(np.float32)
+            mask = 1. - float(done)
             final_rewards *= mask
             final_rewards += (1. - mask) * episode_rewards
             episode_rewards *= mask
             if np.any(done==1):
                 total_reward.extend(final_rewards[final_rewards!=0])
                 final_rewards[final_rewards!=0] = 0
+                state = eval_env.reset()
+                state = state[0]
+                
             if len(total_reward)>=hp.eval_eps:
                 break
         log_and_print(text, f"Average total reward over {hp.eval_eps} episodes: {np.mean(total_reward):.3f}")
@@ -233,7 +241,7 @@ def maybe_evaluate_and_print(RL_agent, eval_env, t, start_time,file_time, hp, d4
             flag = RL_agent.IsCheckpoint(score)
             log_and_print(text, f"This Score：{score} Max Score:{RL_agent.Maxscore}")
             if flag:
-                RL_agent.save(f"./{hp.file_name}/output/{file_time}/checkpoint/models/")
+                RL_agent.save(f"./output/{hp.file_name}/{file_time}/checkpoint/models/")
         log_and_print(text, "---------------------------------------")
         return text,total_reward
 
@@ -242,14 +250,14 @@ def maybe_evaluate_and_print(RL_agent, eval_env, t, start_time,file_time, hp, d4
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     # RL
-    parser.add_argument("--env", default="SuperMarioBros-1-1-v0", type=str)
+    parser.add_argument("--env", default="SuperMarioBros-8-4-v0", type=str)
     parser.add_argument("--seed", default=0, type=int)
-    parser.add_argument("--test", default=False, action=argparse.BooleanOptionalAction)
+    parser.add_argument("--test", default=True, action=argparse.BooleanOptionalAction)
 
     # Evaluation
     parser.add_argument("--checkpoint", default=True, action=argparse.BooleanOptionalAction)
-    parser.add_argument("--eval_eps", default=4, type=int)
-    parser.add_argument("--max_timesteps", default=300, type=int)
+    parser.add_argument("--eval_eps", default=10, type=int)
+    parser.add_argument("--max_timesteps", default=400, type=int)
     parser.add_argument("--eval",default=1,type=int)
     # File
     parser.add_argument('--file_name', default=None)
@@ -257,13 +265,15 @@ if __name__ == "__main__":
     args = parser.parse_args()
     
     
-    
-    
     if args.file_name is None:
         args.file_name = f"{args.env}"
 
-    if not os.path.exists(f"./{args.file_name}/output"):
-        os.makedirs(f"./{args.file_name}/output")
+    if not os.path.exists(f"./output/{args.file_name}"):
+        os.makedirs(f"./output/{args.file_name}")
+        
+        
+    if not os.path.exists(f"./test/{args.file_name}/model"):
+        os.makedirs(f"./test/{args.file_name}/model")
         
         
     
@@ -309,17 +319,20 @@ if __name__ == "__main__":
     action_dim = env.action_space.n
     
     
-    envs = SubprocVecEnv(hp.num_processes,hp) if hp.num_processes > 1 else env
+    if not hp.test:
+        envs = SubprocVecEnv(hp.num_processes,hp) if hp.num_processes > 1 else env
+        
+        
     eval_envs = SubprocVecEnv(hp.num_processes,hp) if hp.num_processes > 1 else eval_env
-    
+        
     RL_agent = PPO.agent(state_dim, action_dim, hp)
     
     rollout = RolloutBuffer(hp.num_steps, hp.num_processes, state_dim, action_dim, hp.gae, hp.discount)
         
 
     if args.test:
-        file_name = f''
-        toTest(RL_agent, env, eval_env,file_name, hp)
+        file_name = f"./test/{args.file_name}/model/"
+        toTest(RL_agent, env, eval_envs,file_name, hp)
     else:
         from torch.utils.tensorboard import SummaryWriter
         train_online(RL_agent, envs, eval_envs, rollout, hp)

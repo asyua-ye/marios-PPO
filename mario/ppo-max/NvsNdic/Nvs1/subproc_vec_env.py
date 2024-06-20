@@ -9,14 +9,14 @@ def worker(remote, parent_remote, env_fn_wrappers,hp):
     def step_env(env, action,old_done):
         if old_done:
             ob,info = env.reset()
-            return ob, np.zeros(env.action_space.shape[0]), False, info
+            return ob, 0, False, info
         else:
-            ob, reward, done,_,info = env.step(action)
+            ob, reward, done, _, info = env.step(action)
             return ob, reward, done, info
 
     parent_remote.close()
     
-    Env = gym_super_mario_bros.make(hp.env, apply_api_compatibility=True)
+    Env = gym_super_mario_bros.make(hp.env,render_mode='human', apply_api_compatibility=True)
     Env = ProcessEnv(Env)
     envs = [Env for _ in range(env_fn_wrappers)]
     done_flags = [False] * len(envs)  # 初始化每个环境的 done 状态

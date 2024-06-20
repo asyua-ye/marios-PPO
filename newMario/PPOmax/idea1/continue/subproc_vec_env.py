@@ -6,23 +6,28 @@ from utils.vec_env import VecEnv, CloudpickleWrapper, clear_mpi_env_vars
 
 
 def worker(remote, parent_remote, env_fn_wrappers,hp):
-    def step_env(env, action):
-        ob, reward, done,_,info = env.step(action)
-        if done:
-            ob = env.reset()
-            ob = ob[0]
-        return ob, reward, done, info
+    def step_env(env, action,old_done):
+        if old_done:
+            ob,info = env.reset()
+            return ob, np.zeros(env.action_space.shape[0]), False, info
+        else:
+            ob, reward, done,_,info = env.step(action)
+            return ob, reward, done, info
 
     parent_remote.close()
     
-    Env = gym_super_mario_bros.make(hp.env, render_mode='human', apply_api_compatibility=True)
+    Env = gym_super_mario_bros.make(hp.env, apply_api_compatibility=True)
     Env = ProcessEnv(Env)
     envs = [Env for _ in range(env_fn_wrappers)]
+    done_flags = [False] * len(envs)  # 初始化每个环境的 done 状态
     try:
         while True:
             cmd, data = remote.recv()
             if cmd == 'step':
-                remote.send([step_env(env, action) for env, action in zip(envs, data)])
+                results = [step_env(env, action, done_flags[i]) for i, (env, action) in enumerate(zip(envs, data))]
+                states, rewards, dones, infos = zip(*results)
+                remote.send(results)
+                done_flags = list(dones)
             elif cmd == 'reset':
                 remote.send([env.reset() for env in envs])
             elif cmd == 'render':

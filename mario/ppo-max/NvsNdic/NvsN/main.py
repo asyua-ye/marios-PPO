@@ -48,20 +48,21 @@ class Hyperparameters:
     max_steps: int = 0
     
     # Actor
-    actor_lr: float = 3e-4
+    actor_lr: float = 1e-4
     entropy: float = 0.01
     log_std_max: int = 2
     log_std_min: int = -20
     eps: float = 1e-5
     std: bool = False
-    ppg: bool = True
+    ppg: bool = False
     share: bool = True
+    threshold: float = 0.5
     
     # Critic
-    critic_lr: float = 3e-4
+    critic_lr: float = 1e-4
     
     # PPO
-    clip: float = 0.25
+    clip: float = 0.20
     ppo_update: int = 25
     mini_batch: int = 40
     value: float = 0.5
@@ -124,7 +125,7 @@ def train_online(RL_agent, env, eval_env, rollout, hp):
             action,logit,value = RL_agent.select_action(np.array(state))
             next_state, reward, ep_finished, _ = env.step(action)
             
-            episode_rewards += reward
+            episode_rewards += np.max(reward, axis=-1)
             mask =  1. - ep_finished.astype(np.float32)
             final_rewards *= mask
             final_rewards += (1. - mask) * episode_rewards
@@ -248,8 +249,8 @@ if __name__ == "__main__":
 
     # Evaluation
     parser.add_argument("--checkpoint", default=True, action=argparse.BooleanOptionalAction)
-    parser.add_argument("--eval_eps", default=7, type=int)
-    parser.add_argument("--max_timesteps", default=1000, type=int)
+    parser.add_argument("--eval_eps", default=4, type=int)
+    parser.add_argument("--max_timesteps", default=300, type=int)
     parser.add_argument("--eval",default=1,type=int)
     # File
     parser.add_argument('--file_name', default=None)
