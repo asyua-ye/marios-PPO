@@ -98,13 +98,14 @@ This project is divided into 3 stages:
 
 ## 遗憾 / Regrets
 
-1. **一开始我的目的是由agent直接输出动作以及持续的时间，无限接近人类操作的过程，但是经过一些努力，发现不行，于是降低了难度，直接输出动作，以及一个固定的时间——4帧，这才完成了所有关卡。**
+一开始我的目的是由agent直接输出动作以及持续的时间，无限接近人类操作的过程，但是经过一些努力，发现不行，于是降低了难度，直接输出动作，以及一个固定的时间——4帧，这才完成了所有关卡
 
-   Initially, my goal was to have the agent directly output actions and their duration, infinitely close to the human operation process. But after some efforts, I found it unfeasible, so I lowered the difficulty by directly outputting actions and a fixed time - 4 frames, which finally completed all levels.
+Initially, my goal was to have the agent directly output actions and their duration, infinitely close to the human operation process. But after some efforts, I found it unfeasible, so I lowered the difficulty by directly outputting actions and a fixed time - 4 frames, which finally completed all levels.
 
-2. **offpolicy方法的尝试，我试过DQN，SAC，TD3，offpolicy-ppo，发现他们都不如onpolicy-ppo，我分析了一些原因，比如样本利用率，或者我代码写错了等，因为时间关系就先搁置在这里了；蒸馏阶段是后期想到的，目前没做完，用了模仿学习去学习那些已训练好的agent的dataset，但最终表现只有1/10的样子吧，后面考虑数据集太小了用多进程持续的生成数据集，也考虑过net2net的方法，但是时间关系都只有搁置了。**
+offpolicy方法的尝试，我试过DQN，SAC，TD3，offpolicy-ppo，发现他们都不如onpolicy-ppo，我分析了一些原因，比如样本利用率，或者我代码写错了等，因为时间关系就先搁置在这里了；蒸馏阶段是后期想到的，目前没做完，用了模仿学习去学习那些已训练好的agent的dataset，但最终表现只有1/10的样子吧，后面考虑数据集太小了用多进程持续的生成数据集，也考虑过net2net的方法，但是时间关系都只有搁置了。
 
-   Attempts with off-policy methods. I tried DQN, SAC, TD3, off-policy-ppo, but found they were not as good as on-policy-ppo. I analyzed some reasons, such as sample utilization rate, or possible errors in my code. Due to time constraints, I had to put it aside for now. The distillation stage was a later idea, currently unfinished. I used imitation learning to learn from the datasets of trained agents, but the final performance was only about 1/10. Later, considering the dataset was too small, I thought about using multi-processing to continuously generate datasets, and also considered the net2net method, but due to time constraints, they were all put aside.
+
+Attempts with off-policy methods. I tried DQN, SAC, TD3, off-policy-ppo, but found they were not as good as on-policy-ppo. I analyzed some reasons, such as sample utilization rate, or possible errors in my code. Due to time constraints, I had to put it aside for now. The distillation stage was a later idea, currently unfinished. I used imitation learning to learn from the datasets of trained agents, but the final performance was only about 1/10. Later, considering the dataset was too small, I thought about using multi-processing to continuously generate datasets, and also considered the net2net method, but due to time constraints, they were all put aside.
 
 有很多有趣的实验都可以在这32个agent之下展开，比如让一个学生agent学习10个教师agent，并达到一定表现去看看那些没有训练过的关卡的通过率；或者是改变输入，不对图片做任何的处理，来引导学生agent达到教师agent的表现；或者观察动作序列，让一连串重复的动作结合到一起，生成新的标签，得到[动作，持续时间]，来曲线救国；等等。
 
@@ -130,14 +131,16 @@ I completed all experiments on the Autodl cloud GPU platform, using a 2080ti gra
 
 要训练模型，请进入 `Final/Nvs1/ppomax/train` 目录，然后执行以下命令：
 
+To train a model, navigate to the `Final/Nvs1/ppomax/train` directory and execute the following command:
+
 ```bash
 python main.py --env SuperMarioBros-1-1-v0 --max_timesteps 800
 ```
 
-
 您可以在 `main.py` 文件的 `Hyperparameters` 类中修改学习率 (`learning_rate`) 和最大训练回合数 (`total_timesteps`)。**注意**，命令行参数 `--max_timesteps` 实际上对应的是总训练回合数 (`total_timesteps`)，而代码中的 `max_timesteps` 是指学习率衰减的最大回合数。
 
-To train a model, navigate to the `Final/Nvs1/ppomax/train` directory and execute the following command:
+You can modify the learning rate (`learning_rate`) and the total number of training episodes (`total_timesteps`) directly within the `Hyperparameters` class in the `main.py` file. Note that the `--max_timesteps` argument in the command line corresponds to the `total_timesteps` in the code, while `max_timesteps` in the code refers to the maximum number of episodes for learning rate decay.
+
 
 ### 测试模型 / Model Testing
 
