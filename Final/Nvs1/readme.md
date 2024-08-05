@@ -6,9 +6,9 @@ This document primarily describes the origins of the project's naming convention
 
 ### 命名由来 / Naming Conventions
 
-*   Nvs1: 代表 "N-dimensional vector representation with 1 fixed time frame"，即使用 N 维向量表示状态，且时间帧数固定为 4 帧。  
+*   Nvs1: 代表 "N-dimensional vector representation with 1 fixed time frame"，即使用 N 维向量表示动作，且时间帧数固定为 4 帧。  
 
-    Stands for "N-dimensional vector representation with 1 fixed time frame," indicating the use of N-dimensional vectors to represent states, with a fixed time frame of 4 frames.
+    Stands for "N-dimensional vector representation with 1 fixed time frame," indicating the use of N-dimensional vectors to represent actions, with a fixed time frame of 4 frames.
 
 *   ppomax: 由于项目中使用了三种稳定训练的方法，故命名为 ppomax。  
 
