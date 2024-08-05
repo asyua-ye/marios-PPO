@@ -1,0 +1,113 @@
+begin time:  2024-07-26T12-10-28
+
+Epoch 0, Average Train Loss: [0.57204038 0.21201178] Average acc: 60.27%
+Epoch 0, Average Validation Loss: [0.42193177 0.17102954] Average acc: 70.32%
+['---------------------------------------', 'Evaluation at 0 time steps', 'Total time passed: 1.55 min(s)', 'level cleared: 0.00% , Average total reward over 12 episodes: 435.667', 'This Score£º(0.0, 1813.07851930667) Max Score:(0.0, 1813.07851930667)', '---------------------------------------']
+Epoch 1, Average Train Loss: [0.19609524 0.07716549] Average acc: 86.36%
+Epoch 1, Average Validation Loss: [0.0931927  0.05254257] Average acc: 94.15%
+['---------------------------------------', 'Evaluation at 1 time steps', 'Total time passed: 3.22 min(s)', 'level cleared: 0.00% , Average total reward over 12 episodes: 294.667', 'This Score£º(0.0, 1102.6365294989412) Max Score:(0.0, 1813.07851930667)', '---------------------------------------']
+Epoch 2, Average Train Loss: [0.08791665 0.05826376] Average acc: 94.83%
+Epoch 2, Average Validation Loss: [0.07942422 0.04671932] Average acc: 95.18%
+['---------------------------------------', 'Evaluation at 2 time steps', 'Total time passed: 4.88 min(s)', 'level cleared: 0.00% , Average total reward over 12 episodes: 644.333', 'This Score£º(0.0, 2530.966256216897) Max Score:(0.0, 2530.966256216897)', '---------------------------------------']
+Epoch 3, Average Train Loss: [0.07490378 0.05046583] Average acc: 95.81%
+Epoch 3, Average Validation Loss: [0.06891137 0.04687137] Average acc: 96.34%
+['---------------------------------------', 'Evaluation at 3 time steps', 'Total time passed: 6.58 min(s)', 'level cleared: 0.00% , Average total reward over 12 episodes: 819.000', 'This Score£º(0.0, 2991.578712761743) Max Score:(0.0, 2991.578712761743)', '---------------------------------------']
+Epoch 4, Average Train Loss: [0.06775179 0.04225926] Average acc: 96.31%
+Epoch 4, Average Validation Loss: [0.06439458 0.05319193] Average acc: 96.51%
+['---------------------------------------', 'Evaluation at 4 time steps', 'Total time passed: 8.38 min(s)', 'level cleared: 0.00% , Average total reward over 12 episodes: 400.500', 'This Score£º(0.0, 1657.5208030204542) Max Score:(0.0, 2991.578712761743)', '---------------------------------------']
+Epoch 5, Average Train Loss: [0.06265364 0.03865068] Average acc: 96.58%
+Epoch 5, Average Validation Loss: [0.06928543 0.04339838] Average acc: 96.33%
+['---------------------------------------', 'Evaluation at 5 time steps', 'Total time passed: 10.01 min(s)', 'level cleared: 0.00% , Average total reward over 12 episodes: 879.750', 'This Score£º(0.0, 3138.9116713124054) Max Score:(0.0, 3138.9116713124054)', '---------------------------------------']
+Epoch 6, Average Train Loss: [0.05852489 0.03521769] Average acc: 96.75%
+Epoch 6, Average Validation Loss: [0.05632352 0.040664  ] Average acc: 96.92%
+['---------------------------------------', 'Evaluation at 6 time steps', 'Total time passed: 11.72 min(s)', 'level cleared: 0.00% , Average total reward over 12 episodes: 895.667', 'This Score£º(0.0, 3326.853195816931) Max Score:(0.0, 3326.853195816931)', '---------------------------------------']
+Epoch 7, Average Train Loss: [0.05490531 0.03392245] Average acc: 96.93%
+Epoch 7, Average Validation Loss: [0.05671419 0.03016454] Average acc: 96.90%
+['---------------------------------------', 'Evaluation at 7 time steps', 'Total time passed: 13.46 min(s)', 'level cleared: 0.00% , Average total reward over 12 episodes: 713.083', 'This Score£º(0.0, 3086.0942535675363) Max Score:(0.0, 3326.853195816931)', '---------------------------------------']
+Epoch 8, Average Train Loss: [0.05479237 0.03173667] Average acc: 96.96%
+Epoch 8, Average Validation Loss: [0.05624558 0.02532648] Average acc: 97.00%
+['---------------------------------------', 'Evaluation at 8 time steps', 'Total time passed: 15.15 min(s)', 'level cleared: 0.00% , Average total reward over 12 episodes: 664.000', 'This Score£º(0.0, 2695.0993770050472) Max Score:(0.0, 3326.853195816931)', '---------------------------------------']
+Epoch 9, Average Train Loss: [0.05319697 0.02734814] Average acc: 97.03%
+Epoch 9, Average Validation Loss: [0.05964338 0.0312729 ] Average acc: 96.84%
+['---------------------------------------', 'Evaluation at 9 time steps', 'Total time passed: 16.83 min(s)', 'level cleared: 0.00% , Average total reward over 12 episodes: 552.833', 'This Score£º(0.0, 2320.1649000803895) Max Score:(0.0, 3326.853195816931)', '---------------------------------------']
+Epoch 10, Average Train Loss: [0.05037519 0.02691763] Average acc: 97.19%
+Epoch 10, Average Validation Loss: [0.05634142 0.02739454] Average acc: 97.03%
+['---------------------------------------', 'Evaluation at 10 time steps', 'Total time passed: 18.47 min(s)', 'level cleared: 0.00% , Average total reward over 12 episodes: 677.500', 'This Score£º(0.0, 2303.098866856923) Max Score:(0.0, 3326.853195816931)', '---------------------------------------']
+Epoch 11, Average Train Loss: [0.04781699 0.02676226] Average acc: 97.35%
+Epoch 11, Average Validation Loss: [0.05277982 0.03240983] Average acc: 97.14%
+['---------------------------------------', 'Evaluation at 11 time steps', 'Total time passed: 20.36 min(s)', 'level cleared: 0.00% , Average total reward over 12 episodes: 332.333', 'This Score£º(0.0, 1102.3696732388285) Max Score:(0.0, 3326.853195816931)', '---------------------------------------']
+Epoch 12, Average Train Loss: [0.0481855  0.02243428] Average acc: 97.30%
+Epoch 12, Average Validation Loss: [0.05416693 0.02661659] Average acc: 97.28%
+['---------------------------------------', 'Evaluation at 12 time steps', 'Total time passed: 22.0 min(s)', 'level cleared: 0.00% , Average total reward over 12 episodes: 451.417', 'This Score£º(0.0, 2024.1451103908462) Max Score:(0.0, 3326.853195816931)', '---------------------------------------']
+Epoch 13, Average Train Loss: [0.04658606 0.0219495 ] Average acc: 97.39%
+Epoch 13, Average Validation Loss: [0.05325719 0.02991423] Average acc: 97.19%
+['---------------------------------------', 'Evaluation at 13 time steps', 'Total time passed: 23.64 min(s)', 'level cleared: 0.00% , Average total reward over 12 episodes: 699.000', 'This Score£º(0.0, 2637.380776221125) Max Score:(0.0, 3326.853195816931)', '---------------------------------------']
+Epoch 14, Average Train Loss: [0.04408651 0.02191701] Average acc: 97.49%
+Epoch 14, Average Validation Loss: [0.05595672 0.02451307] Average acc: 97.12%
+['---------------------------------------', 'Evaluation at 14 time steps', 'Total time passed: 25.42 min(s)', 'level cleared: 0.00% , Average total reward over 12 episodes: 939.917', 'This Score£º(0.0, 3487.09351790672) Max Score:(0.0, 3487.09351790672)', '---------------------------------------']
+Epoch 15, Average Train Loss: [0.04446938 0.02087377] Average acc: 97.47%
+Epoch 15, Average Validation Loss: [0.05434589 0.03672055] Average acc: 97.36%
+['---------------------------------------', 'Evaluation at 15 time steps', 'Total time passed: 27.15 min(s)', 'level cleared: 0.00% , Average total reward over 12 episodes: 719.500', 'This Score£º(0.0, 2525.2174171667484) Max Score:(0.0, 3487.09351790672)', '---------------------------------------']
+Epoch 16, Average Train Loss: [0.04353595 0.0216571 ] Average acc: 97.53%
+Epoch 16, Average Validation Loss: [0.05262952 0.02583532] Average acc: 97.31%
+['---------------------------------------', 'Evaluation at 16 time steps', 'Total time passed: 28.84 min(s)', 'level cleared: 0.00% , Average total reward over 12 episodes: 588.000', 'This Score£º(0.0, 2445.1136158512913) Max Score:(0.0, 3487.09351790672)', '---------------------------------------']
+Epoch 17, Average Train Loss: [0.0430132  0.01974783] Average acc: 97.51%
+Epoch 17, Average Validation Loss: [0.05355619 0.02350814] Average acc: 97.24%
+['---------------------------------------', 'Evaluation at 17 time steps', 'Total time passed: 30.47 min(s)', 'level cleared: 0.00% , Average total reward over 12 episodes: 822.417', 'This Score£º(0.0, 3302.8579192943416) Max Score:(0.0, 3487.09351790672)', '---------------------------------------']
+Epoch 18, Average Train Loss: [0.04215704 0.01956445] Average acc: 97.56%
+Epoch 18, Average Validation Loss: [0.05424956 0.02612832] Average acc: 97.35%
+['---------------------------------------', 'Evaluation at 18 time steps', 'Total time passed: 32.12 min(s)', 'level cleared: 0.00% , Average total reward over 12 episodes: 475.833', 'This Score£º(0.0, 1949.22579451581) Max Score:(0.0, 3487.09351790672)', '---------------------------------------']
+Epoch 19, Average Train Loss: [0.04130456 0.01874269] Average acc: 97.64%
+Epoch 19, Average Validation Loss: [0.0539757  0.02341547] Average acc: 97.27%
+['---------------------------------------', 'Evaluation at 19 time steps', 'Total time passed: 33.74 min(s)', 'level cleared: 0.00% , Average total reward over 12 episodes: 528.167', 'This Score£º(0.0, 2162.3510406260016) Max Score:(0.0, 3487.09351790672)', '---------------------------------------']
+Epoch 20, Average Train Loss: [0.04023976 0.01779995] Average acc: 97.69%
+Epoch 20, Average Validation Loss: [0.05208439 0.02511215] Average acc: 97.35%
+['---------------------------------------', 'Evaluation at 20 time steps', 'Total time passed: 35.41 min(s)', 'level cleared: 8.33% , Average total reward over 12 episodes: 1073.083', 'This Score£º(8.333333333333332, 5258.589871225225) Max Score:(8.333333333333332, 5258.589871225225)', '---------------------------------------']
+Epoch 21, Average Train Loss: [0.03892319 0.01742767] Average acc: 97.72%
+Epoch 21, Average Validation Loss: [0.05456996 0.02130736] Average acc: 97.26%
+['---------------------------------------', 'Evaluation at 21 time steps', 'Total time passed: 37.17 min(s)', 'level cleared: 0.00% , Average total reward over 12 episodes: 804.750', 'This Score£º(0.0, 2788.4496119229725) Max Score:(8.333333333333332, 5258.589871225225)', '---------------------------------------']
+Epoch 22, Average Train Loss: [0.03953217 0.01733879] Average acc: 97.72%
+Epoch 22, Average Validation Loss: [0.05199289 0.02133911] Average acc: 97.42%
+['---------------------------------------', 'Evaluation at 22 time steps', 'Total time passed: 38.92 min(s)', 'level cleared: 0.00% , Average total reward over 12 episodes: 726.417', 'This Score£º(0.0, 2815.067767614465) Max Score:(8.333333333333332, 5258.589871225225)', '---------------------------------------']
+Epoch 23, Average Train Loss: [0.03874698 0.01702283] Average acc: 97.78%
+Epoch 23, Average Validation Loss: [0.05280399 0.02124145] Average acc: 97.43%
+['---------------------------------------', 'Evaluation at 23 time steps', 'Total time passed: 40.67 min(s)', 'level cleared: 0.00% , Average total reward over 12 episodes: 777.583', 'This Score£º(0.0, 2866.2277097597253) Max Score:(8.333333333333332, 5258.589871225225)', '---------------------------------------']
+Epoch 24, Average Train Loss: [0.03781707 0.01614966] Average acc: 97.80%
+Epoch 24, Average Validation Loss: [0.05459456 0.02521431] Average acc: 97.40%
+['---------------------------------------', 'Evaluation at 24 time steps', 'Total time passed: 42.44 min(s)', 'level cleared: 0.00% , Average total reward over 12 episodes: 515.000', 'This Score£º(0.0, 2085.2651650150465) Max Score:(8.333333333333332, 5258.589871225225)', '---------------------------------------']
+Epoch 25, Average Train Loss: [0.03806253 0.01592236] Average acc: 97.77%
+Epoch 25, Average Validation Loss: [0.05488337 0.02228155] Average acc: 97.37%
+['---------------------------------------', 'Evaluation at 25 time steps', 'Total time passed: 44.19 min(s)', 'level cleared: 8.33% , Average total reward over 12 episodes: 1319.667', 'This Score£º(8.333333333333332, 5850.121631799809) Max Score:(8.333333333333332, 5850.121631799809)', '---------------------------------------']
+Epoch 26, Average Train Loss: [0.03794368 0.01546388] Average acc: 97.81%
+Epoch 26, Average Validation Loss: [0.05282159 0.02125382] Average acc: 97.44%
+['---------------------------------------', 'Evaluation at 26 time steps', 'Total time passed: 46.02 min(s)', 'level cleared: 8.33% , Average total reward over 12 episodes: 872.250', 'This Score£º(8.333333333333332, 4226.7366594485575) Max Score:(8.333333333333332, 5850.121631799809)', '---------------------------------------']
+Epoch 27, Average Train Loss: [0.03752861 0.01570863] Average acc: 97.79%
+Epoch 27, Average Validation Loss: [0.05368556 0.0219271 ] Average acc: 97.37%
+['---------------------------------------', 'Evaluation at 27 time steps', 'Total time passed: 47.85 min(s)', 'level cleared: 8.33% , Average total reward over 12 episodes: 977.583', 'This Score£º(8.333333333333332, 4409.807220880015) Max Score:(8.333333333333332, 5850.121631799809)', '---------------------------------------']
+Epoch 28, Average Train Loss: [0.03728834 0.01437085] Average acc: 97.80%
+Epoch 28, Average Validation Loss: [0.05079863 0.01912378] Average acc: 97.46%
+['---------------------------------------', 'Evaluation at 28 time steps', 'Total time passed: 49.73 min(s)', 'level cleared: 0.00% , Average total reward over 12 episodes: 800.167', 'This Score£º(0.0, 3060.338593329919) Max Score:(8.333333333333332, 5850.121631799809)', '---------------------------------------']
+Epoch 29, Average Train Loss: [0.03667048 0.01456581] Average acc: 97.83%
+Epoch 29, Average Validation Loss: [0.05293014 0.02196181] Average acc: 97.41%
+['---------------------------------------', 'Evaluation at 29 time steps', 'Total time passed: 51.6 min(s)', 'level cleared: 0.00% , Average total reward over 12 episodes: 1209.000', 'This Score£º(0.0, 4539.9657013355545) Max Score:(8.333333333333332, 5850.121631799809)', '---------------------------------------']
+Epoch 30, Average Train Loss: [0.03688521 0.01346679] Average acc: 97.81%
+Epoch 30, Average Validation Loss: [0.05198833 0.01965859] Average acc: 97.54%
+['---------------------------------------', 'Evaluation at 30 time steps', 'Total time passed: 53.54 min(s)', 'level cleared: 0.00% , Average total reward over 12 episodes: 662.083', 'This Score£º(0.0, 2770.5426284244413) Max Score:(8.333333333333332, 5850.121631799809)', '---------------------------------------']
+Epoch 31, Average Train Loss: [0.03627239 0.01337895] Average acc: 97.89%
+Epoch 31, Average Validation Loss: [0.05291112 0.0195577 ] Average acc: 97.28%
+['---------------------------------------', 'Evaluation at 31 time steps', 'Total time passed: 55.43 min(s)', 'level cleared: 0.00% , Average total reward over 12 episodes: 623.333', 'This Score£º(0.0, 2550.266634145319) Max Score:(8.333333333333332, 5850.121631799809)', '---------------------------------------']
+Epoch 32, Average Train Loss: [0.03600555 0.01392868] Average acc: 97.86%
+Epoch 32, Average Validation Loss: [0.05072136 0.0195642 ] Average acc: 97.55%
+['---------------------------------------', 'Evaluation at 32 time steps', 'Total time passed: 57.33 min(s)', 'level cleared: 0.00% , Average total reward over 12 episodes: 877.250', 'This Score£º(0.0, 3232.0633015807643) Max Score:(8.333333333333332, 5850.121631799809)', '---------------------------------------']
+Epoch 33, Average Train Loss: [0.03521746 0.01457523] Average acc: 97.91%
+Epoch 33, Average Validation Loss: [0.05192377 0.02090515] Average acc: 97.46%
+['---------------------------------------', 'Evaluation at 33 time steps', 'Total time passed: 59.3 min(s)', 'level cleared: 0.00% , Average total reward over 12 episodes: 831.750', 'This Score£º(0.0, 3473.0195359619884) Max Score:(8.333333333333332, 5850.121631799809)', '---------------------------------------']
+Epoch 34, Average Train Loss: [0.03562502 0.01306304] Average acc: 97.90%
+Epoch 34, Average Validation Loss: [0.05261167 0.03049458] Average acc: 97.52%
+['---------------------------------------', 'Evaluation at 34 time steps', 'Total time passed: 61.26 min(s)', 'level cleared: 0.00% , Average total reward over 12 episodes: 465.083', 'This Score£º(0.0, 1840.6004984089493) Max Score:(8.333333333333332, 5850.121631799809)', '---------------------------------------']
+Epoch 35, Average Train Loss: [0.03530714 0.01253693] Average acc: 97.92%
+Epoch 35, Average Validation Loss: [0.05231412 0.01979318] Average acc: 97.47%
+['---------------------------------------', 'Evaluation at 35 time steps', 'Total time passed: 63.16 min(s)', 'level cleared: 0.00% , Average total reward over 12 episodes: 755.500', 'This Score£º(0.0, 3143.0985259418776) Max Score:(8.333333333333332, 5850.121631799809)', '---------------------------------------']
+Epoch 36, Average Train Loss: [0.03491653 0.01232628] Average acc: 97.89%
+Epoch 36, Average Validation Loss: [0.05426578 0.01887401] Average acc: 97.55%
+['---------------------------------------', 'Evaluation at 36 time steps', 'Total time passed: 64.99 min(s)', 'level cleared: 0.00% , Average total reward over 12 episodes: 719.500', 'This Score£º(0.0, 3087.209366090845) Max Score:(8.333333333333332, 5850.121631799809)', '---------------------------------------']

@@ -1,0 +1,11 @@
+numpy==1.26.4
+torch==2.0.0
+gymnasium==0.29.1
+gym==0.26.2
+gym-super-mario-bros==7.4.0
+stable-baselines3==2.2.1
+matplotlib==3.8.3
+pandas==2.2.1
+pillow==10.2.0
+tqdm==4.66.2
+tensorboard==2.16.2
