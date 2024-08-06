@@ -122,9 +122,9 @@ I also want to look at other methods: NGU, R2D2, Agent57, AlphaGo, AlphaZero, Mu
 
 ## 项目的使用 / Project Usage
 
-我在 AutoDL 云 GPU 平台上完成了所有实验，使用的显卡是 2080ti。在自己的电脑上，我仅进行了一些调试工作。项目所需的所有包都记录在 `requirements.txt` 文件中，大家可以根据文件中的内容和指定的顺序自行安装。
+我在 AutoDL 云 GPU 平台上完成了所有实验，使用的显卡是 2080ti。在自己的电脑上，我仅进行了一些调试工作。项目所需的所有包都记录在 `requirements.txt` 文件中，大家可以根据文件中的内容和指定的顺序自行安装，`python-Version==3.9.13`。
 
-I completed all experiments on the Autodl cloud GPU platform, using a 2080ti graphics card. On my own computer, I only performed some debugging tasks. All the packages required for the project are listed in the `requirements.txt` file, and you can install them in the specified order.
+I completed all experiments on the Autodl cloud GPU platform, using a 2080ti graphics card. On my own computer, I only performed some debugging tasks. All the packages required for the project are listed in the `requirements.txt` file, and you can install them in the specified order,`python-Version==3.9.13`.
 
 
 ### 训练模型 / Model Training

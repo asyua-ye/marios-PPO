@@ -6,9 +6,9 @@ This document primarily describes the origins of the project's naming convention
 
 ### 命名由来 / Naming Conventions
 
-*   Nvs1: 代表 "N-dimensional vector representation with 1 fixed time frame"，即使用 N 维向量表示状态，且时间帧数固定为 4 帧。  
+*   Nvs1: 代表 "N-dimensional vector representation with 1 fixed time frame"，即使用 N 维向量表示动作，且时间帧数固定为 4 帧。  
 
-    Stands for "N-dimensional vector representation with 1 fixed time frame," indicating the use of N-dimensional vectors to represent states, with a fixed time frame of 4 frames.
+    Stands for "N-dimensional vector representation with 1 fixed time frame," indicating the use of N-dimensional vectors to represent actions, with a fixed time frame of 4 frames.
 
 *   ppomax: 由于项目中使用了三种稳定训练的方法，故命名为 ppomax。  
 
@@ -29,7 +29,7 @@ This document primarily describes the origins of the project's naming convention
 
         Additionally, the checkpoint mechanism is not well-designed.
 
-    *   尽管如此，32 个关卡的模型都是在这个文件夹中训练的，所以我也保存了下来，但建议在 train 文件夹中训练效果会更好。
+    *   尽管如此，32 个关卡的模型都是在这个文件夹中训练的，所以我也保存了下来，但建议在 train 文件夹中训练，效果会更好。
 
         Nevertheless, models for all 32 levels were trained in this folder, so they are preserved. However, training in the train folder is recommended for better results.
 
@@ -108,9 +108,9 @@ This section focuses on three methods for stabilizing training and the reward fu
 
         Linear decay: Decreases from 1.0 to 0.1 based on the number of gradient update steps.
 
-    *   在 retrain 阶段，学习率会先线性上升，从 0.1 上升到 1.0，然后再从 1.0 余弦衰减到 0.1。  
+    *   在 retrain 阶段，学习率会先线性上升，从 0.1 上升到 1.0，然后再从 1.0 余弦衰减到 0.1。这样设计主要是我没有保存critic网络的参数(其中CNN模块是共享的)，需要一个预热期训练critic网络。  
 
-        In the retraining phase, the learning rate first linearly increases from 0.1 to 1.0, then cosine decays from 1.0 to 0.1.
+        In the retraining phase, the learning rate first linearly increases from 0.1 to 1.0, then cosine decays from 1.0 to 0.1.The main reason for this design is that I didn't save the parameters of the Critic network (where the CNN module is shared) and needed a warm-up period to train the Critic network.  
 
 4.  **8-4 关卡奖励函数 / 8-4 Level Reward Function**
     *   当 agent 进入某些错误路线时会受到惩罚。  
