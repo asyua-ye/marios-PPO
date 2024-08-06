@@ -131,9 +131,9 @@ You can examine the files within the test folder, which primarily include hyperp
 
 ## 一些经验
 
-关卡选择: 我在 8-4 和 8-1 这两个关卡上花费了最多的调参时间。如果您想实验其他强化学习算法但时间有限，可以重点关注这两个关卡。  
+关卡选择: 我在 8-4 和 8-1 这两个关卡上花费了最多的调参时间。如果您想实验其他强化学习算法但时间有限，可以重点关注这两个关卡。另外，8-4的训练极其不稳定，即使是同样的超参数，可能这一次得到了很好的表现，但是下一次就不能保证得到相同的表现(固定了随机种子的情况下)。  
 
-Level Selection: I spent the most time tuning hyperparameters on levels 8-4 and 8-1. If you're interested in experimenting with other reinforcement learning algorithms but have limited time, you may want to focus on these two levels.  
+Level Selection: I spent the most time tuning hyperparameters on levels 8-4 and 8-1. If you're interested in experimenting with other reinforcement learning algorithms but have limited time, you may want to focus on these two levels.In addition, 8-4 training is extremely unstable; even with the same hyperparameters, one may get good performance one time, but not be guaranteed to get the same performance the next time (with the random seed fixed).  
 
 
 实验数据: 我保存了在 Mario 项目中所有的尝试，大约有 10G（包括各种代码版本和调参结果）。如果您想查看这些数据，可以联系我，我会发给您。虽然我觉得可能用处不大，但对我来说主要是一种纪念。  
