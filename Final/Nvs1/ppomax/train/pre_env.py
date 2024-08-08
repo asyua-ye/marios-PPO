@@ -98,12 +98,12 @@ def Reward(info,reward,old_info,done,eight):
         elif (eight==4 and (np.abs(info["x_pos"]-old_info["x_pos"])>100)):
             p = - 200
             new_done = True 
-        elif (eight==4 and (info["x_pos"]>3600)):
+        elif (eight==4 and (info["x_pos"]>3560)):
             eight +=1
         elif (eight==5 and (np.abs(info["x_pos"]-old_info["x_pos"])>100)):
             eight += 1
             s += 200
-        elif (eight==5 and (info["x_pos"]>3750)):
+        elif (eight==5 and (info["x_pos"]>3700)):
             p = - 200
             new_done = True
             
